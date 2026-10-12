@@ -18,6 +18,7 @@ from iOpenPod.app.core.settings.definitions import (
 )
 from iOpenPod.app.core.settings.transcoding import read_transcoder_settings
 from iOpenPod.app.display_text import exception_text, source_text
+from iOpenPod.app.jellyfin.settings import load_jellyfin_config
 from iOpenPod.app.models.device import DeviceCandidateIssueCode
 from iOpenPod.app.scrobbling.settings import SCROBBLE_DURING_SYNC, configured_accounts
 from iOpenPod.app.services.device_coordinator import (
@@ -420,6 +421,11 @@ class SyncController(QObject):
                 reconcile_playlists=reconcile_playlists,
                 podcasts=podcasts,
                 scrobble_accounts=configured_accounts(self._settings),
+                jellyfin=(
+                    load_jellyfin_config(self._settings)
+                    if load_jellyfin_config(self._settings).is_authenticated
+                    else None
+                ),
             )
         except ValueError as error:
             self.last_error = f"Check the transcoding settings: {error}"

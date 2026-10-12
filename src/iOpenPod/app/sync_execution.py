@@ -23,7 +23,10 @@ from iOpenPod.app.artwork_policy import (
 )
 from iOpenPod.app.display_text import exception_text, source_text
 from iOpenPod.app.host_media_fingerprint import FpcalcError, FpcalcFingerprinter
-from iOpenPod.app.host_media_library import HostMediaFileKind
+from iOpenPod.app.host_media_library import HostMediaFileKind, HostMediaSource
+from iOpenPod.app.jellyfin.client import JellyfinClient
+from iOpenPod.app.jellyfin.library import JellyfinMediaItem, download_jellyfin_track
+from iOpenPod.app.jellyfin.models import JellyfinConfig, JellyfinItem
 from iOpenPod.app.library_sync_helper import SyncDetails, SyncedImage, SyncedTrack
 from iOpenPod.app.library_write import (
     LibraryPreparationRequest,
@@ -112,7 +115,7 @@ _PHOTO_MEMORY_BUDGET = 2 * 1024 * 1024 * 1024
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator
 
-    from iOpenPod.app.host_media_library import HostMediaLibrary, HostMediaSource
+    from iOpenPod.app.host_media_library import HostMediaLibrary
     from iOpenPod.app.library_sync_helper import IPodMediaLibrary
     from iOpenPod.app.media.transcoding import PreparedTranscode
     from iOpenPod.app.models.device import ActiveIPod
@@ -170,6 +173,7 @@ class SyncExecutionRequest:
     reconcile_playlists: bool = True
     podcasts: PodcastSyncRequest | None = None
     scrobble_accounts: tuple[Account, ...] = ()
+    jellyfin: JellyfinConfig | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1066,11 +1070,40 @@ class SyncExecutor:
                 ),
             )
             try:
+                source_key = host_path_identity(item.host_path or "")
+                source_obj = sources[source_key]
+                if (
+                    request.jellyfin is not None
+                    and request.jellyfin.is_authenticated
+                    and not Path(source_obj.path).exists()
+                ):
+                    client = JellyfinClient(
+                        request.jellyfin.server_url,
+                        token=request.jellyfin.access_token,
+                    )
+                    cache_file = Path(source_obj.path)
+                    jelly_id = cache_file.stem
+                    media_item = JellyfinMediaItem(
+                        item=JellyfinItem(item_id=jelly_id, name=item.name),
+                        track=tracks[source_key],
+                        source=source_obj,
+                        cache_path=cache_file,
+                    )
+                    download_jellyfin_track(client, media_item, checkpoint=checkpoint)
+                    stat = cache_file.stat()
+                    source_obj = HostMediaSource(
+                        path=source_obj.path,
+                        kind=source_obj.kind,
+                        size_bytes=stat.st_size,
+                        modified_ns=stat.st_mtime_ns,
+                    )
+                    sources[source_key] = source_obj
+
                 result = self._prepare_one(
                     request,
                     item,
-                    sources[host_path_identity(item.host_path or "")],
-                    tracks[host_path_identity(item.host_path or "")],
+                    sources[source_key],
+                    tracks[source_key],
                     tools,
                     checkpoint,
                     lambda update: report_activity(item, update),

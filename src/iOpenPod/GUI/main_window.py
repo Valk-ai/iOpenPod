@@ -47,6 +47,9 @@ from iOpenPod.app.host_media_library import (
     HostMediaScanProgress,
     PlaylistExternalReference,
 )
+from iOpenPod.app.jellyfin.client import JellyfinClient
+from iOpenPod.app.jellyfin.library import fetch_jellyfin_library, merge_with_jellyfin
+from iOpenPod.app.jellyfin.settings import load_jellyfin_config
 from iOpenPod.app.library_export import (
     ExportProgress,
     ExportResult,
@@ -1714,6 +1717,30 @@ class MainWindow(QMainWindow):
     def _media_scan_finished(self, value: object) -> None:
         if not isinstance(value, HostMediaLibrary):
             return
+        jellyfin_config = load_jellyfin_config(self._context.settings)
+        if jellyfin_config.is_authenticated:
+            try:
+                active = self._context.device_controller.active_ipod
+                sync_videos = (
+                    active is not None and active.profile.capabilities.video.supported
+                )
+                client = JellyfinClient(
+                    jellyfin_config.server_url,
+                    token=jellyfin_config.access_token,
+                )
+                remote_items = fetch_jellyfin_library(
+                    client,
+                    jellyfin_config,
+                    sync_videos=sync_videos,
+                )
+                value = merge_with_jellyfin(
+                    value,
+                    remote_items,
+                    policy=jellyfin_config.overlap_policy,
+                )
+            except Exception as exc:
+                logger.warning("Could not merge Jellyfin media: %s", exc)
+
         if self._context.device_controller.active_ipod is not None:
             self._pending_host_media_library = value
             if self._context.ipod_media_controller.start():

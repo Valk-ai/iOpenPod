@@ -67,6 +67,7 @@ from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.browser_chrome import PageHeader
 from iOpenPod.GUI.widgets.ipod_preferences import IPodPreferencesView
+from iOpenPod.GUI.widgets.jellyfin_settings import JellyfinSettings
 from iOpenPod.GUI.widgets.media_tools_settings import MediaToolsSettings
 from iOpenPod.GUI.widgets.scrobbling_settings import ScrobblingSettings
 from iOpenPod.GUI.widgets.setting_group import SettingGroup, SettingRow
@@ -360,9 +361,11 @@ class SettingsPage(QWidget):
             if scrobbling is not None
             else None
         )
+        self._jellyfin_settings = JellyfinSettings(settings, self, editor=self._editor)
         self._sync_tab = self._add_tab(
             "syncSettingsScroll",
             self._sync_settings,
+            self._jellyfin_settings,
             *(
                 (self._scrobbling_settings,)
                 if self._scrobbling_settings is not None
@@ -695,6 +698,7 @@ class SettingsPage(QWidget):
         self._backup_location_row.setVisible(not device)
         if self._scrobbling_settings is not None:
             self._scrobbling_settings.setVisible(not device)
+        self._jellyfin_settings.setVisible(not device)
         self._update_scope_state()
 
     def _update_scope_state(self) -> None:

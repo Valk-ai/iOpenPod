@@ -140,9 +140,7 @@ def test_encoder_failure_details_and_paths_are_plain_text() -> None:
 def test_installed_tool_versions_are_shown() -> None:
     view = MediaToolsSettings()
     view.set_status(
-        _setup(
-            versions={"ffmpeg": "7.1.1", "ffprobe": "7.1.1", "fpcalc": "1.6.0"}
-        ),
+        _setup(versions={"ffmpeg": "7.1.1", "ffprobe": "7.1.1", "fpcalc": "1.6.0"}),
         checking=False,
         busy=False,
         message="",
