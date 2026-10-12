@@ -6,7 +6,7 @@ import hashlib
 import logging
 from collections import Counter
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
-from contextlib import ExitStack
+from contextlib import ExitStack, suppress
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -1251,6 +1251,19 @@ class SyncExecutor:
                             ],
                         ),
                     )
+                # If this track was downloaded from Jellyfin and transcoded, the large
+                # original source payload (e.g. FLAC) in the cache is no longer needed
+                # for writing to the iPod. Remove it so large remote libraries do not
+                # exhaust host storage.
+                if (
+                    request.jellyfin is not None
+                    and request.jellyfin.is_authenticated
+                    and is_jellyfin_source(source_obj.path)
+                    and result.was_transcoded
+                ):
+                    with suppress(OSError):
+                        Path(source_obj.path).unlink(missing_ok=True)
+
                 # Register ownership inside the worker before the result is delivered.
                 # Even a failed progress callback then closes every successful capture.
                 # The executor joins workers before the outer ExitStack can close.
