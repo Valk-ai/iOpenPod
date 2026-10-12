@@ -218,6 +218,7 @@ class LibraryPage(QWidget):
             grid_search_label=self.tr("Search Albums"),
             supports_list=False,
             supports_selection_grouping=self._selection_mode,
+            supports_bulk_selection=self._selection_mode,
             sort_accessible_name=self.tr("Sort albums"),
             sort_options=(
                 SortOption(self.tr("Album title"), AlbumSortMode.TITLE.value),

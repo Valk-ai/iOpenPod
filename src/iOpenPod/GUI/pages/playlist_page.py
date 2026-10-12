@@ -54,6 +54,7 @@ class PlaylistPage(QWidget):
         self.setObjectName("playlistsPage")
         self._workspace = workspace
         self._source_actions = source_actions
+        self._selection_mode = False
         self._selected_id: int | None = None
         self._generation = workspace.generation
         self._query = ""
@@ -152,7 +153,9 @@ class PlaylistPage(QWidget):
     def set_sync_selection(self, selection: SyncSelection) -> None:
         """Share Sync membership across every occurrence of a Host Track."""
 
+        self._selection_mode = True
         self._tracks.set_sync_selection(selection)
+        self._toolbar.set_bulk_selection_supported(True)
 
     def select_playlist(self, playlist_id: object) -> None:
         if (
@@ -469,6 +472,7 @@ class PlaylistPage(QWidget):
                 "LibraryLabels", "Search Tracks"
             ),
             supports_list=False,
+            supports_bulk_selection=self._selection_mode,
         )
         self._edit.setText(self.tr("Edit…"))
         self._evaluate.setText(self.tr("Evaluate now"))

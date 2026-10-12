@@ -264,6 +264,7 @@ class PhotoPage(QWidget):
             grid_search_label=self.tr("Search Photos"),
             supports_list=False,
             supports_selection_grouping=self._selection_mode,
+            supports_bulk_selection=self._selection_mode,
             sort_accessible_name=self.tr("Sort Photos"),
             sort_options=(
                 SortOption(

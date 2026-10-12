@@ -20,7 +20,7 @@ from iOpenPod.app.library_sync_helper import (
     IPodMediaLibrary,
     IPodTrackFingerprint,
 )
-from iOpenPod.app.sync_plan import prepare_sync_plan
+from iOpenPod.app.sync_plan import SyncPlan, prepare_sync_plan
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
 from iOpenPod.GUI.sync_workspace import SyncWorkspace
 from iPodDB.library import LibrarySnapshot, Track, TrackMetadata
@@ -45,20 +45,42 @@ def workspace() -> Iterator[SyncWorkspace]:
         context.shutdown()
 
 
-def test_sync_navigation_select_all_and_deselect_all_buttons_exist_and_labeled(
+def test_sync_heading_bar_select_all_and_deselect_all_buttons_exist_and_labeled(
+    tmp_path: Path,
     workspace: SyncWorkspace,
 ) -> None:
-    select_all = workspace.findChild(QPushButton, "syncSelectAll")
-    deselect_all = workspace.findChild(QPushButton, "syncDeselectAll")
+    device = build_device(tmp_path)
+    try:
+        host = HostMediaLibrary(LibrarySnapshot(), (), (), HostMediaCacheStats())
+        comparison = SyncPlan(())
+        ipod_media = IPodMediaLibrary((), (), (), IPodMediaCacheStats(), None, False)
+        workspace.load_comparison(host, comparison, device.active, ipod_media)
+        workspace.show_selection()
 
-    assert select_all is not None
-    assert deselect_all is not None
-    assert select_all.text() == "Select All"
-    assert deselect_all.text() == "Deselect All"
-    assert "Select all" in select_all.toolTip()
-    assert "Deselect all" in deselect_all.toolTip()
-    assert select_all.accessibleName() == "Select all Host media"
-    assert deselect_all.accessibleName() == "Deselect all Host media"
+        select_all = workspace.findChild(QPushButton, "syncSelectAll")
+        deselect_all = workspace.findChild(QPushButton, "syncDeselectAll")
+
+        assert select_all is not None
+        assert deselect_all is not None
+        assert select_all.isVisible()
+        assert deselect_all.isVisible()
+        assert select_all.text() == "Select All"
+        assert deselect_all.text() == "Deselect All"
+        assert "Select all" in select_all.toolTip()
+        assert "Deselect all" in deselect_all.toolTip()
+        assert select_all.accessibleName() == "Select all Host media"
+        assert deselect_all.accessibleName() == "Deselect all Host media"
+
+        # Switch to Tracks page: tracks heading bar also has bulk selection buttons
+        workspace._show_library_page("tracks")
+        tracks_select_all = workspace.findChild(QPushButton, "tracksSelectAll")
+        tracks_deselect_all = workspace.findChild(QPushButton, "tracksDeselectAll")
+        assert tracks_select_all is not None
+        assert tracks_deselect_all is not None
+        assert tracks_select_all.isVisible()
+        assert tracks_deselect_all.isVisible()
+    finally:
+        device.coordinator.close()
 
 
 def test_sync_workspace_bulk_selection_updates_models_and_summary(

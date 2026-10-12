@@ -173,8 +173,6 @@ class _ScanPage(QWidget):
 
 class _SyncLibraryNavigation(QFrame):
     pageRequested = Signal(str)
-    selectAllRequested = Signal()
-    deselectAllRequested = Signal()
 
     def __init__(
         self,
@@ -200,27 +198,6 @@ class _SyncLibraryNavigation(QFrame):
         )
         contents_layout.setSpacing(LAYOUT.space_3xs)
         contents_layout.addWidget(self._heading)
-
-        selection_actions = QHBoxLayout()
-        selection_actions.setContentsMargins(0, LAYOUT.space_3xs, 0, LAYOUT.space_xs)
-        selection_actions.setSpacing(LAYOUT.space_xs)
-        self._select_all = ActionButton(
-            parent=contents,
-            kind=ActionButtonKind.SECONDARY,
-        )
-        self._select_all.setObjectName("syncSelectAll")
-        self._select_all.clicked.connect(self.selectAllRequested.emit)
-        self._deselect_all = ActionButton(
-            parent=contents,
-            kind=ActionButtonKind.SECONDARY,
-        )
-        self._deselect_all.setObjectName("syncDeselectAll")
-        self._deselect_all.clicked.connect(self.deselectAllRequested.emit)
-        selection_actions.addWidget(self._select_all)
-        selection_actions.addWidget(self._deselect_all)
-        contents_layout.addLayout(selection_actions)
-        QWidget.setTabOrder(self._select_all, self._deselect_all)
-
         self.playlist_tree = PlaylistTree(
             playlists, contents, show_add_button=False, show_context_menu=False
         )
@@ -266,16 +243,6 @@ class _SyncLibraryNavigation(QFrame):
 
     def retranslate_ui(self) -> None:
         self._heading.setText(self.tr("HOST MEDIA"))
-        self._select_all.setText(
-            QCoreApplication.translate("CommonActions", "Select All")
-        )
-        self._deselect_all.setText(
-            QCoreApplication.translate("CommonActions", "Deselect All")
-        )
-        self._select_all.setToolTip(self.tr("Select all Host media for Sync"))
-        self._deselect_all.setToolTip(self.tr("Deselect all Host media from Sync"))
-        self._select_all.setAccessibleName(self.tr("Select all Host media"))
-        self._deselect_all.setAccessibleName(self.tr("Deselect all Host media"))
         for page_id, button in self._buttons.items():
             button.setText(page_label(page_id))
 
@@ -477,12 +444,6 @@ class SyncWorkspace(QWidget):
         self.execution.exitRequested.connect(self.exitRequested.emit)
         self._library_navigation.pageRequested.connect(self._show_library_page)
         self._library_navigation.playlist_tree.selected.connect(self._playlist_selected)
-        self._library_navigation.selectAllRequested.connect(
-            self.selection.select_all_host
-        )
-        self._library_navigation.deselectAllRequested.connect(
-            self.selection.deselect_all_host
-        )
         self.selection.changed.connect(self._refresh_selection_summary)
         self.selection.changed.connect(self._refresh_storage_estimate)
         self._settings.settingChanged.connect(self._storage_settings_changed)

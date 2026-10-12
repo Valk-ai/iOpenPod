@@ -14,7 +14,11 @@ from PySide6.QtWidgets import (
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.browser_chrome import PageHeader
 from iOpenPod.GUI.widgets.search_field import SearchField
-from iOpenPod.GUI.widgets.themed_buttons import IconButton
+from iOpenPod.GUI.widgets.themed_buttons import (
+    ActionButton,
+    ActionButtonKind,
+    IconButton,
+)
 
 _ASCENDING_ACTION = "__sort_ascending__"
 _DESCENDING_ACTION = "__sort_descending__"
@@ -36,6 +40,8 @@ class LibraryToolbar(PageHeader):
     sortDirectionChanged = Signal(object)
     viewModeChanged = Signal(str)
     selectionGroupingChanged = Signal(bool)
+    selectAllRequested = Signal()
+    deselectAllRequested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -101,6 +107,26 @@ class LibraryToolbar(PageHeader):
         view_layout.addWidget(self._list_button)
         self._view_switch = view_switch
 
+        self._supports_bulk_selection = False
+        self._select_all = ActionButton(
+            parent=self,
+            kind=ActionButtonKind.SECONDARY,
+        )
+        self._select_all.setObjectName("syncSelectAll")
+        self._select_all.setProperty("syncSelectAll", True)
+        self._select_all.clicked.connect(self.selectAllRequested.emit)
+        self._deselect_all = ActionButton(
+            parent=self,
+            kind=ActionButtonKind.SECONDARY,
+        )
+        self._deselect_all.setObjectName("syncDeselectAll")
+        self._deselect_all.setProperty("syncDeselectAll", True)
+        self._deselect_all.clicked.connect(self.deselectAllRequested.emit)
+        self._select_all.hide()
+        self._deselect_all.hide()
+        self.add_title_action(self._select_all)
+        self.add_title_action(self._deselect_all)
+
         self._search = SearchField(self)
         self._search.setObjectName("librarySearch")
 
@@ -131,6 +157,7 @@ class LibraryToolbar(PageHeader):
         supports_list: bool = True,
         supports_search: bool = True,
         supports_selection_grouping: bool = False,
+        supports_bulk_selection: bool | None = None,
         sort_accessible_name: str = "",
         sort_options: tuple[SortOption, ...] = (),
     ) -> None:
@@ -143,12 +170,21 @@ class LibraryToolbar(PageHeader):
         self._supports_list = supports_list
         self._supports_search = supports_search
         self._supports_selection_grouping = supports_selection_grouping
+        if supports_bulk_selection is not None:
+            self._supports_bulk_selection = supports_bulk_selection
         self._sort_accessible_name = sort_accessible_name
         self._sort_options = sort_options
         if not supports_list:
             self._view_mode = "grid"
         self._refresh_sort_options()
         self._refresh_mode_copy()
+        self._select_all.setVisible(self._supports_bulk_selection)
+        self._deselect_all.setVisible(self._supports_bulk_selection)
+
+    def set_bulk_selection_supported(self, supported: bool) -> None:
+        self._supports_bulk_selection = supported
+        self._select_all.setVisible(supported)
+        self._deselect_all.setVisible(supported)
 
     def set_namespace(self, namespace: str) -> None:
         """Give controls stable unique names for one page instance."""
@@ -158,6 +194,8 @@ class LibraryToolbar(PageHeader):
         self._sort.setObjectName(f"{namespace}Sort")
         self._view_switch.setObjectName(f"{namespace}ViewModes")
         self._selection_grouping.setObjectName(f"{namespace}SelectionGrouping")
+        self._select_all.setObjectName(f"{namespace}SelectAll")
+        self._deselect_all.setObjectName(f"{namespace}DeselectAll")
         self._search.setObjectName(f"{namespace}Search")
 
     def set_query(self, query: str) -> None:
@@ -186,6 +224,18 @@ class LibraryToolbar(PageHeader):
         self._selection_grouping.setToolTip(
             self.tr("Group cards as Selected, Mixed, and Deselected")
         )
+        self._select_all.setText(
+            QCoreApplication.translate("CommonActions", "Select All")
+        )
+        self._deselect_all.setText(
+            QCoreApplication.translate("CommonActions", "Deselect All")
+        )
+        self._select_all.setToolTip(self.tr("Select all Host media for Sync"))
+        self._deselect_all.setToolTip(self.tr("Deselect all Host media from Sync"))
+        self._select_all.setAccessibleName(self.tr("Select all Host media"))
+        self._deselect_all.setAccessibleName(self.tr("Deselect all Host media"))
+        self._select_all.setVisible(self._supports_bulk_selection)
+        self._deselect_all.setVisible(self._supports_bulk_selection)
         self._refresh_sort_options()
 
     def _refresh_sort_options(self) -> None:

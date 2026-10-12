@@ -300,6 +300,7 @@ class CollectionPage(QWidget):
             list_search_label=self.tr("Search %1").replace("%1", label),
             supports_list=self._supports_list,
             supports_selection_grouping=self._selection_mode,
+            supports_bulk_selection=self._selection_mode,
             sort_accessible_name=self.tr("Sort %1").replace("%1", label),
             sort_options=self._sort_options(),
         )

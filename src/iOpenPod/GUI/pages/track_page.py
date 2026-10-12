@@ -30,9 +30,12 @@ class TrackPage(QWidget):
         table_id: str,
         media_kinds: tuple[MediaKind, ...] | None,
         parent: QWidget | None = None,
+        *,
+        selection_mode: bool = False,
     ) -> None:
         super().__init__(parent)
         self._page_id = page_id
+        self._selection_mode = selection_mode
         self.setObjectName(f"{page_id.value}Page")
 
         self._proxy = TrackFilterProxyModel(tracks, self)
@@ -66,6 +69,7 @@ class TrackPage(QWidget):
             grid_title=label,
             grid_search_label=self.tr("Search %1").replace("%1", label),
             supports_list=False,
+            supports_bulk_selection=self._selection_mode,
         )
 
     def select_track(self, track_id: int) -> bool:

@@ -27,6 +27,10 @@ class PageHeader(QFrame):
         self._title.setObjectName("pageHeaderTitle")
         self._title.setProperty("browserTitle", True)
 
+        self._title_actions = QHBoxLayout()
+        self._title_actions.setContentsMargins(0, 0, 0, 0)
+        self._title_actions.setSpacing(LAYOUT.space_xs)
+
         self._layout = QHBoxLayout(self)
         self._layout.setContentsMargins(
             LAYOUT.space_lg,
@@ -36,6 +40,7 @@ class PageHeader(QFrame):
         )
         self._layout.setSpacing(LAYOUT.space_sm)
         self._layout.addWidget(self._title)
+        self._layout.addLayout(self._title_actions)
         self._layout.addStretch(1)
 
     @property
@@ -49,6 +54,11 @@ class PageHeader(QFrame):
 
         self._title.setText(title)
         self._title.setAccessibleName(title)
+
+    def add_title_action(self, action: QWidget) -> None:
+        """Append one action immediately following the title, before the stretch."""
+
+        self._title_actions.addWidget(action)
 
     def add_action(self, action: QWidget) -> None:
         """Append one page-owned action to the shared header rhythm."""
