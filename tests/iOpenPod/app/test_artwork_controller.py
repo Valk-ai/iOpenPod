@@ -154,6 +154,27 @@ def test_image_larger_than_the_rgb_cache_limit_is_delivered_but_not_retained() -
         controller.shutdown()
 
 
+def test_pending_overflow_evicts_oldest_unstarted_request() -> None:
+    gate = Event()
+    loader = _ArtworkLoader(gate=gate)
+    controller = ArtworkController(loader, max_pending=2, max_threads=1)
+    try:
+        controller.request(1, 152)
+        assert loader.started.wait(timeout=1)
+        controller.request(2, 152)
+        assert controller.pending_count == 2
+
+        controller.request(3, 152)
+        assert controller.pending_count == 2
+
+        gate.set()
+        _wait_until(lambda: controller.pending_count == 0)
+        assert {req.artwork_id for req in loader.requests} == {1, 3}
+    finally:
+        gate.set()
+        controller.shutdown()
+
+
 def _wait_until(predicate: Callable[[], bool], timeout_ms: int = 3000) -> None:
     deadline = monotonic() + timeout_ms / 1000
     while not predicate() and monotonic() < deadline:

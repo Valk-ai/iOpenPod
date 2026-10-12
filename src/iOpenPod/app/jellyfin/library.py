@@ -303,6 +303,8 @@ def download_jellyfin_artwork(
     cache_dir: Path,
     *,
     filename: str | None = None,
+    max_width: int = 500,
+    quality: int = 85,
 ) -> Path | None:
     """Download an item's primary cover image to cache, returning its path if available."""
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -314,7 +316,7 @@ def download_jellyfin_artwork(
     headers = client._headers()
     headers["Accept"] = "image/*, */*"
 
-    url = client.get_image_url(item_id)
+    url = client.get_image_url(item_id, max_width=max_width, quality=quality)
     req = Request(url, headers=headers)
 
     ssl_ctx = None
@@ -329,7 +331,7 @@ def download_jellyfin_artwork(
             ssl_ctx = None
 
     try:
-        with urlopen(req, timeout=15, context=ssl_ctx) as resp:
+        with urlopen(req, timeout=10, context=ssl_ctx) as resp:
             data = resp.read(16 * 1024 * 1024)
             if data:
                 try:

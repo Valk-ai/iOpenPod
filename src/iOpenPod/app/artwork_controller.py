@@ -83,7 +83,8 @@ class ArtworkController(QObject):
         parent: QObject | None = None,
         *,
         cache_byte_limit: int = 64 * 1024 * 1024,
-        max_pending: int = 32,
+        max_pending: int = 64,
+        max_threads: int = 4,
         display_times: Callable[[int], tuple[int, ...]] | None = None,
     ) -> None:
         super().__init__(parent)
@@ -91,10 +92,12 @@ class ArtworkController(QObject):
             raise ValueError("Artwork cache size must be positive")
         if max_pending <= 0:
             raise ValueError("Artwork pending-request limit must be positive")
+        if max_threads <= 0:
+            raise ValueError("Artwork thread pool limit must be positive")
         self._loader = loader
         self._display_times = display_times
         self._thread_pool = QThreadPool(self)
-        self._thread_pool.setMaxThreadCount(2)
+        self._thread_pool.setMaxThreadCount(max_threads)
         self._cache_byte_limit = cache_byte_limit
         self._max_pending = max_pending
         self._cache_bytes = 0
@@ -151,6 +154,14 @@ class ArtworkController(QObject):
         if key in self._pending or key in self._unavailable:
             return None
         if len(self._pending) >= self._max_pending:
+            # Evict the oldest queued requests that haven't started yet to prioritize visible items
+            for old_token, old_item in tuple(self._work_items.items()):
+                if self._thread_pool.tryTake(old_item):
+                    self._work_items.pop(old_token, None)
+                    self._pending.discard(old_item.key)
+                    if len(self._pending) < self._max_pending:
+                        break
+        if len(self._pending) >= self._max_pending:
             return None
 
         self._next_token += 1
@@ -174,7 +185,8 @@ class ArtworkController(QObject):
         )
         self._pending.add(key)
         self._work_items[token] = item
-        self._thread_pool.start(item)
+        # Use incremental token priority so newest (currently visible) requests run first
+        self._thread_pool.start(item, token)
         return None
 
     @Slot(object)
