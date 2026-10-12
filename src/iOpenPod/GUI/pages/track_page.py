@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from iOpenPod.app.core.settings.service import SettingsService
 from iOpenPod.app.models.library_filter_models import TrackFilterProxyModel
+from iOpenPod.app.models.sync_selection import SyncSelection
 from iOpenPod.app.models.track_table_model import TrackTableModel
 from iOpenPod.GUI.navigation import PageId, page_label
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
@@ -32,10 +33,12 @@ class TrackPage(QWidget):
         parent: QWidget | None = None,
         *,
         selection_mode: bool = False,
+        selection: SyncSelection | None = None,
     ) -> None:
         super().__init__(parent)
         self._page_id = page_id
         self._selection_mode = selection_mode
+        self._selection = selection
         self.setObjectName(f"{page_id.value}Page")
 
         self._proxy = TrackFilterProxyModel(tracks, self)
@@ -58,9 +61,16 @@ class TrackPage(QWidget):
         layout.addWidget(self._table, 1)
 
         self._toolbar.queryChanged.connect(self._proxy.set_query)
+        self._toolbar.selectAllRequested.connect(lambda: self._select_all_tracks(True))
+        self._toolbar.deselectAllRequested.connect(
+            lambda: self._select_all_tracks(False)
+        )
         self._table.currentTrackChanged.connect(self.currentTrackChanged.emit)
         self._table.trackActivated.connect(self.trackActivated.emit)
         self.retranslate_ui()
+
+    def set_sync_selection(self, selection: SyncSelection | None) -> None:
+        self._selection = selection
 
     def retranslate_ui(self) -> None:
         label = page_label(self._page_id)
@@ -89,6 +99,16 @@ class TrackPage(QWidget):
         if event.type() == QEvent.Type.LanguageChange:
             self.retranslate_ui()
         super().changeEvent(event)
+
+    def _select_all_tracks(self, checked: bool) -> None:
+        if self._selection is None:
+            return
+        track_ids: set[int] = set()
+        for row in range(self._proxy.rowCount()):
+            track = self._proxy.track_at(self._proxy.index(row, 0))
+            if track is not None:
+                track_ids.add(track.track_id)
+        self._selection.set_tracks_checked(track_ids, checked)
 
 
 __all__ = ["TrackPage"]

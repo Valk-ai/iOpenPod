@@ -94,6 +94,10 @@ def main(
 
 
 def initialize_application() -> None:
+    from iOpenPod.app.core.runtime import configure_runtime_storage
+
+    configure_runtime_storage()
+
     from iOpenPod.app.core.logging import setup_logger
     from iOpenPod.app.core.settings.definitions import LOGGING_PATH
     from iOpenPod.app.core.settings.service import SettingsService

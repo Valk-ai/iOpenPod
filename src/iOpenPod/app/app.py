@@ -34,6 +34,9 @@ _WINDOWS_APP_USER_MODEL_ID = "iOpenPod.iOpenPod"
 def start_ui() -> int:
     """Start iOpenPod and discover connected Device Candidates."""
 
+    from iOpenPod.app.core.runtime import configure_runtime_storage
+
+    configure_runtime_storage()
     initialize_update_runtime()
     _set_windows_app_user_model_id()
     configure_display()

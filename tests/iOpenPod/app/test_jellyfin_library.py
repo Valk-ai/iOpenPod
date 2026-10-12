@@ -6,6 +6,7 @@ from io import BytesIO
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
+import pytest
 from PIL import Image
 
 if TYPE_CHECKING:
@@ -253,6 +254,40 @@ def test_download_jellyfin_track(tmp_path: Path) -> None:
 
     assert out_path.exists()
     assert out_path.read_bytes() == b"MOCK AUDIO DATA CONTENT"
+
+
+def test_download_jellyfin_track_cleans_up_part_on_error(tmp_path: Path) -> None:
+    media_item = translate_jellyfin_item(
+        JellyfinItem(
+            item_id="track-down-err",
+            name="Error Song",
+            media_type="Audio",
+            container="flac",
+        ),
+        tmp_path,
+    )
+
+    fake_client = MagicMock()
+    fake_client.get_download_url.return_value = (
+        "http://jelly.lan/Items/track-down-err/Download"
+    )
+    fake_client._headers.return_value = {}
+
+    fake_resp = MagicMock()
+    fake_resp.read.side_effect = OSError("Connection aborted")
+    fake_resp.headers = {"Content-Length": "1000"}
+
+    with (
+        patch("iOpenPod.app.jellyfin.library.urlopen", return_value=fake_resp),
+        pytest.raises(OSError, match="Connection aborted"),
+    ):
+        download_jellyfin_track(fake_client, media_item)
+
+    part_path = media_item.cache_path.with_suffix(
+        media_item.cache_path.suffix + ".part"
+    )
+    assert not part_path.exists()
+    assert not media_item.cache_path.exists()
 
 
 def _make_dummy_jpeg() -> bytes:

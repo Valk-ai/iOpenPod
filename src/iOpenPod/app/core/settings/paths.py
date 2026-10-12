@@ -41,3 +41,23 @@ def default_backup_path() -> Path:
         else Path.home() / ".local" / "share"
     )
     return base / "iopenpod" / "backups"
+
+
+def default_cache_path() -> Path:
+    """Return the default cache parent directory."""
+
+    if sys.platform == "win32":
+        fallback = Path.home() / "AppData" / "Local"
+        configured = os.environ.get("LOCALAPPDATA")
+        candidate = Path(configured) if configured else fallback
+        base = candidate if candidate.is_absolute() else fallback
+        return base / "iOpenPod" / "Cache"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Caches" / "iOpenPod"
+    cache_home = os.environ.get("XDG_CACHE_HOME")
+    base = (
+        Path(cache_home)
+        if cache_home and Path(cache_home).is_absolute()
+        else Path.home() / ".cache"
+    )
+    return base / "iopenpod"

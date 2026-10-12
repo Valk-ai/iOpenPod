@@ -33,7 +33,6 @@ from iOpenPod.GUI.presentation.photo_provider import PhotoPixmapProvider
 from iOpenPod.GUI.widgets.album_grid import AlbumGridView
 from iOpenPod.GUI.widgets.collection_detail import CollectionDetailPage
 from iOpenPod.GUI.widgets.collection_grid import CollectionGridView
-from iOpenPod.GUI.widgets.library_toolbar import LibraryToolbar
 from iOpenPod.GUI.widgets.photo_grid import PhotoGridView
 from iOpenPod.GUI.widgets.sync_selection_actions import SyncSelectionActions
 from iOpenPod.GUI.widgets.track_table import TrackTable
@@ -114,6 +113,7 @@ class HostLibraryBrowser:
             parent,
             selection_mode=selection is not None,
             follow_ipod_view_mode=False,
+            selection=selection,
         )
         tracks = TrackPage(
             self.track_model,
@@ -125,6 +125,7 @@ class HostLibraryBrowser:
             None,
             parent,
             selection_mode=selection is not None,
+            selection=selection,
         )
         artists = CollectionPage(
             self.track_model,
@@ -138,6 +139,7 @@ class HostLibraryBrowser:
             parent=parent,
             selection_mode=selection is not None,
             follow_ipod_view_mode=False,
+            selection=selection,
         )
         genres = CollectionPage(
             self.track_model,
@@ -151,6 +153,7 @@ class HostLibraryBrowser:
             parent=parent,
             selection_mode=selection is not None,
             follow_ipod_view_mode=False,
+            selection=selection,
         )
         audiobooks = TrackPage(
             self.track_model,
@@ -162,6 +165,7 @@ class HostLibraryBrowser:
             (MediaKind.AUDIOBOOK,),
             parent,
             selection_mode=selection is not None,
+            selection=selection,
         )
         movies = TrackPage(
             self.track_model,
@@ -173,6 +177,7 @@ class HostLibraryBrowser:
             (MediaKind.MOVIE,),
             parent,
             selection_mode=selection is not None,
+            selection=selection,
         )
         tv_shows = CollectionPage(
             self.track_model,
@@ -185,6 +190,7 @@ class HostLibraryBrowser:
             parent=parent,
             selection_mode=selection is not None,
             follow_ipod_view_mode=False,
+            selection=selection,
         )
         music_videos = CollectionPage(
             self.track_model,
@@ -197,6 +203,7 @@ class HostLibraryBrowser:
             parent=parent,
             selection_mode=selection is not None,
             follow_ipod_view_mode=False,
+            selection=selection,
         )
         videos = TrackPage(
             self.track_model,
@@ -208,6 +215,7 @@ class HostLibraryBrowser:
             (MediaKind.MOVIE, MediaKind.TV_SHOW, MediaKind.MUSIC_VIDEO),
             parent,
             selection_mode=selection is not None,
+            selection=selection,
         )
         podcasts = TrackPage(
             self.track_model,
@@ -219,6 +227,7 @@ class HostLibraryBrowser:
             (MediaKind.PODCAST,),
             parent,
             selection_mode=selection is not None,
+            selection=selection,
         )
         self.playlist_page = PlaylistPage(
             self.workspace,
@@ -263,9 +272,6 @@ class HostLibraryBrowser:
             if selection is not None:
                 for detail in page.findChildren(CollectionDetailPage):
                     detail.tracksCheckRequested.connect(selection.set_tracks_checked)
-                for toolbar in page.findChildren(LibraryToolbar):
-                    toolbar.selectAllRequested.connect(selection.select_all_host)
-                    toolbar.deselectAllRequested.connect(selection.deselect_all_host)
             for table in page.findChildren(TrackTable):
                 if selection is None:
                     table.set_library_workspace(self.workspace)

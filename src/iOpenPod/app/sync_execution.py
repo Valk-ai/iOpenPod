@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from collections import Counter
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from contextlib import ExitStack
@@ -34,6 +35,7 @@ from iOpenPod.app.jellyfin.library import (
     JellyfinMediaItem,
     download_jellyfin_artwork,
     download_jellyfin_track,
+    is_jellyfin_source,
 )
 from iOpenPod.app.jellyfin.models import JellyfinConfig, JellyfinItem
 from iOpenPod.app.library_sync_helper import SyncDetails, SyncedImage, SyncedTrack
@@ -140,6 +142,9 @@ if TYPE_CHECKING:
     from iOpenPod.app.sync_plan import SyncPlan
     from storage.content_workspace import ContentWorkspace
     from storage.media_processing import MediaTools
+
+
+logger = logging.getLogger(__name__)
 
 
 class SyncExecutionStatus(StrEnum):
@@ -1140,14 +1145,18 @@ class SyncExecutor:
                     source_obj = sources[source_key]
                 with tracks_lock:
                     track_obj = tracks[source_key]
-                if request.jellyfin is not None and request.jellyfin.is_authenticated:
+                if (
+                    request.jellyfin is not None
+                    and request.jellyfin.is_authenticated
+                    and is_jellyfin_source(source_obj.path)
+                ):
                     cache_file = Path(source_obj.path)
                     client = JellyfinClient(
                         request.jellyfin.server_url,
                         token=request.jellyfin.access_token,
                     )
                     jelly_id = cache_file.stem
-                    if not cache_file.exists():
+                    if not cache_file.exists() or cache_file.stat().st_size == 0:
                         media_item = JellyfinMediaItem(
                             item=JellyfinItem(item_id=jelly_id, name=item.name),
                             track=track_obj,
@@ -1297,6 +1306,12 @@ class SyncExecutor:
                 except PreparationCancelledError:
                     was_cancelled = True
                 except Exception as error:
+                    logger.exception(
+                        "Failed to prepare track %r (%s): %s",
+                        item.name,
+                        item.host_path,
+                        error,
+                    )
                     issues.append(
                         WriteIssue(
                             "sync.item_failed",

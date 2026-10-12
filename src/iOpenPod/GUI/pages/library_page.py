@@ -14,6 +14,7 @@ from iOpenPod.app.models.library_filter_models import (
     TrackFilterProxyModel,
 )
 from iOpenPod.app.models.selection_grouping import SelectionGroupingProxyModel
+from iOpenPod.app.models.sync_selection import SyncSelection
 from iOpenPod.app.models.track_table_model import TrackColumn, TrackTableModel
 from iOpenPod.GUI.delegates.selection_group_delegate import SelectionGroupDelegate
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
@@ -42,11 +43,13 @@ class LibraryPage(QWidget):
         *,
         selection_mode: bool = False,
         follow_ipod_view_mode: bool = True,
+        selection: SyncSelection | None = None,
     ) -> None:
         super().__init__(parent)
         self._selected_album: AlbumSummary | None = None
         self._album_query = ""
         self._selection_mode = selection_mode
+        self._selection = selection
 
         self._album_proxy = AlbumFilterProxyModel(albums, self)
         self._album_grouping = (
@@ -115,12 +118,19 @@ class LibraryPage(QWidget):
         self._toolbar.sortModeChanged.connect(self._set_album_sort)
         self._toolbar.sortDirectionChanged.connect(self._album_proxy.set_sort_direction)
         self._toolbar.selectionGroupingChanged.connect(self._set_selection_grouping)
+        self._toolbar.selectAllRequested.connect(lambda: self._select_all_albums(True))
+        self._toolbar.deselectAllRequested.connect(
+            lambda: self._select_all_albums(False)
+        )
         self._table.currentTrackChanged.connect(self.currentTrackChanged.emit)
         self._table.trackActivated.connect(self.trackActivated.emit)
         tracks.modelReset.connect(self._library_reset)
 
         self._refresh_track_context()
         self._toolbar.set_selection_grouping(selection_mode)
+
+    def set_sync_selection(self, selection: SyncSelection | None) -> None:
+        self._selection = selection
 
     def show_all_tracks(self) -> None:
         self._show_browser()
@@ -226,3 +236,14 @@ class LibraryPage(QWidget):
                 SortOption(self.tr("Year"), AlbumSortMode.YEAR.value),
             ),
         )
+
+    def _select_all_albums(self, checked: bool) -> None:
+        if self._selection is None:
+            return
+        track_ids: set[int] = set()
+        for row in range(self._album_proxy.rowCount()):
+            index = self._album_proxy.index(row, 0)
+            summary = self._album_proxy.data(index, AlbumRole.SUMMARY)
+            if isinstance(summary, AlbumSummary):
+                track_ids.update(summary.track_ids)
+        self._selection.set_tracks_checked(track_ids, checked)

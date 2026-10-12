@@ -50,3 +50,26 @@ def configure_bundled_tools() -> None:
     configuration above and does not add anything to ``PATH``.
     """
     configure_frozen_runtime()
+
+
+def configure_runtime_storage() -> Path:
+    """Configure persistent host storage for media staging, transcode scratch, and overflow."""
+    import shutil
+    import tempfile
+
+    from iOpenPod.app.core.settings.paths import default_cache_path
+
+    staging = default_cache_path() / "staging"
+    staging.mkdir(parents=True, exist_ok=True)
+    # Clean up stale temporary directories from previous interrupted runs
+    for item in staging.glob("iopenpod-*"):
+        try:
+            if item.is_dir():
+                shutil.rmtree(item, ignore_errors=True)
+            else:
+                item.unlink(missing_ok=True)
+        except OSError:
+            pass
+    os.environ["TMPDIR"] = str(staging)
+    tempfile.tempdir = str(staging)
+    return staging

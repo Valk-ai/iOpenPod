@@ -281,19 +281,23 @@ def download_jellyfin_track(
         total_size = int(length_header)
 
     downloaded = 0
-    with part_path.open("wb") as out_file:
-        while True:
-            if checkpoint:
-                checkpoint()
-            chunk = resp.read(64 * 1024)
-            if not chunk:
-                break
-            out_file.write(chunk)
-            downloaded += len(chunk)
-            if progress:
-                progress(downloaded, total_size)
+    try:
+        with part_path.open("wb") as out_file:
+            while True:
+                if checkpoint:
+                    checkpoint()
+                chunk = resp.read(64 * 1024)
+                if not chunk:
+                    break
+                out_file.write(chunk)
+                downloaded += len(chunk)
+                if progress:
+                    progress(downloaded, total_size)
 
-    part_path.replace(dest)
+        part_path.replace(dest)
+    except Exception:
+        part_path.unlink(missing_ok=True)
+        raise
     return dest
 
 

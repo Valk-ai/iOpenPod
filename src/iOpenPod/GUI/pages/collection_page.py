@@ -29,6 +29,7 @@ from iOpenPod.app.models.selection_grouping import (
     SelectionGroupingProxyModel,
     SelectionGroupingRole,
 )
+from iOpenPod.app.models.sync_selection import SyncSelection
 from iOpenPod.app.models.track_order import album_track_sort_key
 from iOpenPod.app.models.track_table_model import TrackColumn, TrackTableModel
 from iOpenPod.GUI.delegates.collection_list_delegate import CollectionListDelegate
@@ -67,6 +68,7 @@ class CollectionPage(QWidget):
         parent: QWidget | None = None,
         selection_mode: bool = False,
         follow_ipod_view_mode: bool = True,
+        selection: SyncSelection | None = None,
     ) -> None:
         super().__init__(parent)
         self._page_id = page_id
@@ -74,6 +76,7 @@ class CollectionPage(QWidget):
         self._kind = collections.kind
         self._supports_list = albums is not None
         self._selection_mode = selection_mode
+        self._selection = selection
         self._selected_collection: CollectionSummary | None = None
         self._selected_album: AlbumSummary | None = None
         self.setObjectName(f"{page_id.value}Page")
@@ -243,6 +246,12 @@ class CollectionPage(QWidget):
         )
         self._toolbar.viewModeChanged.connect(self.set_view_mode)
         self._toolbar.selectionGroupingChanged.connect(self._set_selection_grouping)
+        self._toolbar.selectAllRequested.connect(
+            lambda: self._select_all_collections(True)
+        )
+        self._toolbar.deselectAllRequested.connect(
+            lambda: self._select_all_collections(False)
+        )
         self._table.currentTrackChanged.connect(self.currentTrackChanged.emit)
         self._table.trackActivated.connect(self.trackActivated.emit)
         if self._collection_list is not None:
@@ -491,6 +500,20 @@ class CollectionPage(QWidget):
         elif self._selected_collection is not None:
             artwork_id = self._selected_collection.representative_artwork_id
         self._content.set_track_context(title, artwork_id)
+
+    def set_sync_selection(self, selection: SyncSelection | None) -> None:
+        self._selection = selection
+
+    def _select_all_collections(self, checked: bool) -> None:
+        if self._selection is None:
+            return
+        track_ids: set[int] = set()
+        for row in range(self._collection_proxy.rowCount()):
+            index = self._collection_proxy.index(row, 0)
+            summary = self._collection_proxy.data(index, CollectionRole.SUMMARY)
+            if isinstance(summary, CollectionSummary):
+                track_ids.update(summary.track_ids)
+        self._selection.set_tracks_checked(track_ids, checked)
 
 
 def _media_kind(kind: CollectionKind) -> MediaKind:

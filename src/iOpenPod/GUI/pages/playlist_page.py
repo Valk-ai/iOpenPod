@@ -55,6 +55,7 @@ class PlaylistPage(QWidget):
         self._workspace = workspace
         self._source_actions = source_actions
         self._selection_mode = False
+        self._sync_selection: SyncSelection | None = None
         self._selected_id: int | None = None
         self._generation = workspace.generation
         self._query = ""
@@ -74,6 +75,12 @@ class PlaylistPage(QWidget):
         self._toolbar = LibraryToolbar(self)
         self._toolbar.set_namespace("playlists")
         self._toolbar.queryChanged.connect(self._set_query)
+        self._toolbar.selectAllRequested.connect(
+            lambda: self._select_all_playlist_tracks(True)
+        )
+        self._toolbar.deselectAllRequested.connect(
+            lambda: self._select_all_playlist_tracks(False)
+        )
         self._table.trackActivated.connect(self.trackActivated.emit)
 
         self._heading = QLabel(self)
@@ -150,12 +157,26 @@ class PlaylistPage(QWidget):
     def selected_playlist_id(self) -> int | None:
         return self._selected_id
 
-    def set_sync_selection(self, selection: SyncSelection) -> None:
+    def set_sync_selection(self, selection: SyncSelection | None) -> None:
         """Share Sync membership across every occurrence of a Host Track."""
 
-        self._selection_mode = True
-        self._tracks.set_sync_selection(selection)
-        self._toolbar.set_bulk_selection_supported(True)
+        self._selection_mode = selection is not None
+        self._sync_selection = selection
+        if selection is not None:
+            self._tracks.set_sync_selection(selection)
+            self._toolbar.set_bulk_selection_supported(True)
+        else:
+            self._toolbar.set_bulk_selection_supported(False)
+
+    def _select_all_playlist_tracks(self, checked: bool) -> None:
+        if self._sync_selection is None:
+            return
+        track_ids: set[int] = set()
+        for row in range(self._proxy.rowCount()):
+            track = self._proxy.track_at(self._proxy.index(row, 0))
+            if track is not None:
+                track_ids.add(track.track_id)
+        self._sync_selection.set_tracks_checked(track_ids, checked)
 
     def select_playlist(self, playlist_id: object) -> None:
         if (

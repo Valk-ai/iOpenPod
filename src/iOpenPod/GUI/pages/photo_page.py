@@ -38,6 +38,7 @@ from iOpenPod.app.models.photo_list_model import (
     PhotoSortMode,
 )
 from iOpenPod.app.models.selection_grouping import SelectionGroupingProxyModel
+from iOpenPod.app.models.sync_selection import SyncSelection
 from iOpenPod.GUI.delegates.selection_group_delegate import SelectionGroupDelegate
 from iOpenPod.GUI.dialogs.photo_album_editor import PhotoAlbumEditorDialog
 from iOpenPod.GUI.dialogs.photo_album_manager import PhotoAlbumManagerDialog
@@ -76,6 +77,7 @@ class PhotoPage(QWidget):
         self._workspace = workspace
         self._source_actions = source_actions
         self._selection_mode = selection_mode
+        self._sync_selection: SyncSelection | None = None
         self._settings = settings
         self._generation = workspace.generation
         self._selected_album_id: int | None = None
@@ -241,6 +243,10 @@ class PhotoPage(QWidget):
             self._photos_proxy.set_sort_direction
         )
         self._toolbar.selectionGroupingChanged.connect(self._set_selection_grouping)
+        self._toolbar.selectAllRequested.connect(lambda: self._select_all_photos(True))
+        self._toolbar.deselectAllRequested.connect(
+            lambda: self._select_all_photos(False)
+        )
         self._create_album.clicked.connect(self._create_photo_album)
         edit_shortcut = QShortcut(QKeySequence("Ctrl+E"), self._grid)
         edit_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
@@ -310,14 +316,23 @@ class PhotoPage(QWidget):
     def set_sync_selection(self, selection: object) -> None:
         """Bind Host Photo cards to the Sync Workspace selection state."""
 
-        from iOpenPod.app.models.sync_selection import SyncSelection
-
-        self._photos_model.set_sync_selection(
+        self._sync_selection = (
             selection if isinstance(selection, SyncSelection) else None
         )
+        self._photos_model.set_sync_selection(self._sync_selection)
         self._grid.setDragEnabled(False)
         self._grid.setDragDropMode(QAbstractItemView.DragDropMode.NoDragDrop)
         self._albums.setDragDropMode(QAbstractItemView.DragDropMode.NoDragDrop)
+
+    def _select_all_photos(self, checked: bool) -> None:
+        if self._sync_selection is None:
+            return
+        photo_ids: set[int] = set()
+        for row in range(self._photos_proxy.rowCount()):
+            photo = self._photos_proxy.photo_at(row)
+            if photo is not None:
+                photo_ids.add(photo.photo_id)
+        self._sync_selection.set_photos_checked(photo_ids, checked)
 
     def changeEvent(self, event: QEvent) -> None:
         if event.type() == QEvent.Type.LanguageChange:

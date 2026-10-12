@@ -23,7 +23,16 @@ from iOpenPod.app.library_sync_helper import (
 from iOpenPod.app.sync_plan import SyncPlan, prepare_sync_plan
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
 from iOpenPod.GUI.sync_workspace import SyncWorkspace
-from iPodDB.library import LibrarySnapshot, Track, TrackMetadata
+from iPodDB.library import (
+    LibrarySnapshot,
+    MediaType,
+    Photo,
+    PhotoLibrary,
+    PhotoRepresentation,
+    PhotoRepresentationKind,
+    Track,
+    TrackMetadata,
+)
 from storage import DevicePath, HostPath
 
 
@@ -171,6 +180,147 @@ def test_sync_workspace_bulk_selection_updates_models_and_summary(
         assert workspace.select_all_host()
         assert workspace.selection.selected_host_count == 3
         assert workspace.deselect_all_host()
+        assert workspace.selection.selected_host_count == 0
+    finally:
+        device.coordinator.close()
+
+
+def test_bulk_selection_scoped_to_active_tab(
+    tmp_path: Path,
+    workspace: SyncWorkspace,
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        music_path_1 = tmp_path / "song-1.mp3"
+        music_path_2 = tmp_path / "song-2.mp3"
+        podcast_path = tmp_path / "cast.mp3"
+        photo_path = tmp_path / "photo.jpg"
+
+        tracks = (
+            Track(
+                1,
+                "Song 1",
+                "Artist A",
+                "Album A",
+                180_000,
+                metadata=TrackMetadata(location=str(music_path_1)),
+            ),
+            Track(
+                2,
+                "Song 2",
+                "Artist B",
+                "Album B",
+                180_000,
+                metadata=TrackMetadata(location=str(music_path_2)),
+            ),
+            Track(
+                3,
+                "Episode 1",
+                "Cast Artist",
+                "Podcast Album",
+                180_000,
+                media_types=(MediaType.PODCAST,),
+                metadata=TrackMetadata(location=str(podcast_path)),
+            ),
+        )
+        photos = PhotoLibrary(
+            photos=(
+                Photo(
+                    1,
+                    representations=(
+                        PhotoRepresentation(
+                            PhotoRepresentationKind.FULL_RESOLUTION,
+                            1,
+                            str(photo_path),
+                            0,
+                            100,
+                            10,
+                            10,
+                        ),
+                    ),
+                ),
+            )
+        )
+        host = HostMediaLibrary(
+            LibrarySnapshot(tracks=tracks, photos=photos),
+            tuple(
+                HostMediaSource(
+                    HostPath(p),
+                    HostMediaFileKind.AUDIO,
+                    100,
+                    1000,
+                    acoustic_fingerprint=f"{i},{i + 1}",
+                )
+                for i, p in enumerate((music_path_1, music_path_2, podcast_path), 1)
+            ),
+            (),
+            HostMediaCacheStats(),
+        )
+        ipod_media = IPodMediaLibrary((), (), (), IPodMediaCacheStats(), None, False)
+        comparison = prepare_sync_plan(host, ipod_media, LibrarySnapshot())
+
+        workspace.load_comparison(host, comparison, device.active, ipod_media)
+        workspace.show_selection()
+
+        # Initial state: no items checked
+        assert workspace.selection.selected_host_count == 0
+
+        # We start on Albums page (default):
+        albums_select_all = workspace.findChild(QPushButton, "syncSelectAll")
+        albums_deselect_all = workspace.findChild(QPushButton, "syncDeselectAll")
+        assert albums_select_all is not None and albums_deselect_all is not None
+
+        # Click Select All on Albums: only tracks 1 and 2 (the music albums) are checked
+        albums_select_all.click()
+        assert workspace.selection.track_check_state(1) is Qt.CheckState.Checked
+        assert workspace.selection.track_check_state(2) is Qt.CheckState.Checked
+        assert workspace.selection.track_check_state(3) is Qt.CheckState.Unchecked
+        assert workspace.selection.photo_check_state(1) is Qt.CheckState.Unchecked
+        assert workspace.selection.selected_host_count == 2
+
+        # Switch to Podcasts tab
+        workspace._show_library_page("podcasts")
+        podcasts_select_all = workspace.findChild(QPushButton, "podcastsSelectAll")
+        podcasts_deselect_all = workspace.findChild(QPushButton, "podcastsDeselectAll")
+        assert podcasts_select_all is not None and podcasts_deselect_all is not None
+
+        # Click Select All on Podcasts: podcast track 3 is now checked as well
+        podcasts_select_all.click()
+        assert workspace.selection.track_check_state(1) is Qt.CheckState.Checked
+        assert workspace.selection.track_check_state(2) is Qt.CheckState.Checked
+        assert workspace.selection.track_check_state(3) is Qt.CheckState.Checked
+        assert workspace.selection.photo_check_state(1) is Qt.CheckState.Unchecked
+        assert workspace.selection.selected_host_count == 3
+
+        # Click Deselect All on Podcasts: only podcast track 3 is deselected
+        podcasts_deselect_all.click()
+        assert workspace.selection.track_check_state(1) is Qt.CheckState.Checked
+        assert workspace.selection.track_check_state(2) is Qt.CheckState.Checked
+        assert workspace.selection.track_check_state(3) is Qt.CheckState.Unchecked
+        assert workspace.selection.photo_check_state(1) is Qt.CheckState.Unchecked
+        assert workspace.selection.selected_host_count == 2
+
+        # Switch to Photos tab
+        workspace._show_library_page("photos")
+        photos_select_all = workspace.findChild(QPushButton, "photosSelectAll")
+        photos_deselect_all = workspace.findChild(QPushButton, "photosDeselectAll")
+        assert photos_select_all is not None and photos_deselect_all is not None
+
+        # Click Select All on Photos: photo 1 is now checked
+        photos_select_all.click()
+        assert workspace.selection.photo_check_state(1) is Qt.CheckState.Checked
+        assert workspace.selection.selected_host_count == 3
+
+        # Click Deselect All on Photos: photo 1 is deselected
+        photos_deselect_all.click()
+        assert workspace.selection.photo_check_state(1) is Qt.CheckState.Unchecked
+        assert workspace.selection.selected_host_count == 2
+
+        # Switch back to Albums tab and Deselect All: tracks 1 and 2 are deselected
+        workspace._show_library_page("albums")
+        albums_deselect_all.click()
+        assert workspace.selection.track_check_state(1) is Qt.CheckState.Unchecked
+        assert workspace.selection.track_check_state(2) is Qt.CheckState.Unchecked
         assert workspace.selection.selected_host_count == 0
     finally:
         device.coordinator.close()
