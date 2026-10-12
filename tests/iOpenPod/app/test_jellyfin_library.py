@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from io import BytesIO
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
+
+from PIL import Image
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -15,6 +18,7 @@ from iOpenPod.app.host_media_library import (
     HostMediaSource,
 )
 from iOpenPod.app.jellyfin.library import (
+    download_jellyfin_artwork,
     download_jellyfin_track,
     merge_with_jellyfin,
     stable_jellyfin_id,
@@ -246,3 +250,78 @@ def test_download_jellyfin_track(tmp_path: Path) -> None:
 
     assert out_path.exists()
     assert out_path.read_bytes() == b"MOCK AUDIO DATA CONTENT"
+
+
+def _make_dummy_jpeg() -> bytes:
+    img = Image.new("RGB", (10, 10), color="blue")
+    buf = BytesIO()
+    img.save(buf, format="JPEG")
+    return buf.getvalue()
+
+
+def test_download_jellyfin_artwork_success(tmp_path: Path) -> None:
+    fake_client = MagicMock()
+    fake_client.get_image_url.return_value = (
+        "http://jelly.lan/Items/item-1/Images/Primary"
+    )
+    fake_client._headers.return_value = {"Accept": "application/json"}
+
+    jpeg_bytes = _make_dummy_jpeg()
+    fake_resp = MagicMock()
+    fake_resp.__enter__.return_value = fake_resp
+    fake_resp.read.return_value = jpeg_bytes
+
+    with patch("iOpenPod.app.jellyfin.library.urlopen", return_value=fake_resp):
+        out_path = download_jellyfin_artwork(fake_client, "item-1", tmp_path)
+
+    assert out_path is not None
+    assert out_path.is_file()
+    assert out_path == tmp_path / "item-1.jpg"
+    assert out_path.read_bytes() == jpeg_bytes
+
+
+def test_download_jellyfin_artwork_cached(tmp_path: Path) -> None:
+    cached_file = tmp_path / "cached-item.jpg"
+    cached_file.write_bytes(b"EXISTING_ART")
+
+    fake_client = MagicMock()
+
+    with patch("iOpenPod.app.jellyfin.library.urlopen") as mock_url:
+        out_path = download_jellyfin_artwork(fake_client, "cached-item", tmp_path)
+
+    mock_url.assert_not_called()
+    assert out_path == cached_file
+
+
+def test_download_jellyfin_artwork_failure(tmp_path: Path) -> None:
+    fake_client = MagicMock()
+    fake_client.get_image_url.return_value = (
+        "http://jelly.lan/Items/item-missing/Images/Primary"
+    )
+    fake_client._headers.return_value = {}
+
+    with patch(
+        "iOpenPod.app.jellyfin.library.urlopen", side_effect=Exception("404 Not Found")
+    ):
+        out_path = download_jellyfin_artwork(fake_client, "item-missing", tmp_path)
+
+    assert out_path is None
+    assert not (tmp_path / "item-missing.jpg").exists()
+
+
+def test_download_jellyfin_artwork_corrupt(tmp_path: Path) -> None:
+    fake_client = MagicMock()
+    fake_client.get_image_url.return_value = (
+        "http://jelly.lan/Items/item-corrupt/Images/Primary"
+    )
+    fake_client._headers.return_value = {}
+
+    fake_resp = MagicMock()
+    fake_resp.__enter__.return_value = fake_resp
+    fake_resp.read.return_value = b"NOT AN IMAGE"
+
+    with patch("iOpenPod.app.jellyfin.library.urlopen", return_value=fake_resp):
+        out_path = download_jellyfin_artwork(fake_client, "item-corrupt", tmp_path)
+
+    assert out_path is None
+    assert not (tmp_path / "item-corrupt.jpg").exists()

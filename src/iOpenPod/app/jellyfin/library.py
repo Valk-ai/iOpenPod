@@ -5,11 +5,15 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import threading
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+
+from PIL import Image
 
 from iOpenPod.app.host_media_library import (
     HostMediaFileKind,
@@ -272,3 +276,57 @@ def download_jellyfin_track(
 
     part_path.replace(dest)
     return dest
+
+
+def download_jellyfin_artwork(
+    client: JellyfinClient,
+    item_id: str,
+    cache_dir: Path,
+) -> Path | None:
+    """Download an item's primary cover image to cache, returning its path if available."""
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    dest = cache_dir / f"{item_id}.jpg"
+    if dest.is_file() and dest.stat().st_size > 0:
+        return dest
+
+    headers = client._headers()
+    headers["Accept"] = "image/*, */*"
+
+    url = client.get_image_url(item_id)
+    req = Request(url, headers=headers)
+
+    ssl_ctx = None
+    if url.startswith("https:"):
+        try:
+            import ssl
+
+            import certifi
+
+            ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+        except Exception:
+            ssl_ctx = None
+
+    try:
+        with urlopen(req, timeout=15, context=ssl_ctx) as resp:
+            data = resp.read(16 * 1024 * 1024)
+            if data:
+                try:
+                    with Image.open(BytesIO(data)) as img:
+                        img.verify()
+                except Exception as verify_err:
+                    logger.debug(
+                        "Downloaded data for %s is not a valid image: %s",
+                        item_id,
+                        verify_err,
+                    )
+                    return None
+
+                part = dest.with_suffix(
+                    f".{os.getpid()}_{threading.get_ident()}.jpg.part"
+                )
+                part.write_bytes(data)
+                part.replace(dest)
+                return dest
+    except Exception as exc:
+        logger.debug("No artwork available for Jellyfin item %s: %s", item_id, exc)
+    return None

@@ -23,9 +23,18 @@ from iOpenPod.app.artwork_policy import (
 )
 from iOpenPod.app.display_text import exception_text, source_text
 from iOpenPod.app.host_media_fingerprint import FpcalcError, FpcalcFingerprinter
-from iOpenPod.app.host_media_library import HostMediaFileKind, HostMediaSource
+from iOpenPod.app.host_media_library import (
+    HostArtworkKind,
+    HostMediaArtworkSource,
+    HostMediaFileKind,
+    HostMediaSource,
+)
 from iOpenPod.app.jellyfin.client import JellyfinClient
-from iOpenPod.app.jellyfin.library import JellyfinMediaItem, download_jellyfin_track
+from iOpenPod.app.jellyfin.library import (
+    JellyfinMediaItem,
+    download_jellyfin_artwork,
+    download_jellyfin_track,
+)
 from iOpenPod.app.jellyfin.models import JellyfinConfig, JellyfinItem
 from iOpenPod.app.library_sync_helper import SyncDetails, SyncedImage, SyncedTrack
 from iOpenPod.app.library_write import (
@@ -105,7 +114,7 @@ from iPodDB.library import (
     prepared_video,
 )
 from iPodDB.shared.photo_image import photo_source_size
-from storage import DeviceEntry, DeviceEntryKind, DevicePath, StorageError
+from storage import DeviceEntry, DeviceEntryKind, DevicePath, HostPath, StorageError
 from storage.content_workspace import content_workspace
 from storage.host_input import LocalHostFile
 from storage.media_processing import available_compute_threads
@@ -388,6 +397,13 @@ class SyncExecutor:
                     host_path_identity(str(source.path)): source
                     for source in request.host.sources
                 }
+                artwork_sources: dict[int, HostMediaArtworkSource] = {
+                    item.artwork_id: item for item in request.host.artwork_sources
+                }
+                host_tracks: dict[str, Track] = {
+                    host_path_identity(track.metadata.location): track
+                    for track in request.host.snapshot.tracks
+                }
                 metadata_updates = self._prepare_metadata_updates(request, checkpoint)
                 podcast_tracks: list[_PreparedPodcast] = []
                 if track_jobs:
@@ -413,7 +429,13 @@ class SyncExecutor:
                             )
                         )
                     else:
-                        prepared, failures, sources = self._prepare_tracks(
+                        (
+                            prepared,
+                            failures,
+                            sources,
+                            artwork_sources,
+                            host_tracks,
+                        ) = self._prepare_tracks(
                             request,
                             tools,
                             resources,
@@ -436,6 +458,22 @@ class SyncExecutor:
                                 ),
                             )
                             issues.extend(failures)
+                combined_artwork_sources = {
+                    s.artwork_id: s for s in request.host.artwork_sources
+                }
+                combined_artwork_sources.update(artwork_sources)
+                request = replace(
+                    request,
+                    host=replace(
+                        request.host,
+                        sources=tuple(sources.values()),
+                        artwork_sources=tuple(combined_artwork_sources.values()),
+                        snapshot=replace(
+                            request.host.snapshot,
+                            tracks=tuple(host_tracks.values()),
+                        ),
+                    ),
+                )
                 checkpoint()
                 issues.extend(
                     _capture_artwork(request, prepared, metadata_updates, checkpoint)
@@ -1009,12 +1047,21 @@ class SyncExecutor:
         progress: Callable[[WriteProgress], None],
         checkpoint: Callable[[], None],
         sources: dict[str, HostMediaSource] | None = None,
-    ) -> tuple[list[_PreparedTrack], list[WriteIssue], dict[str, HostMediaSource]]:
+    ) -> tuple[
+        list[_PreparedTrack],
+        list[WriteIssue],
+        dict[str, HostMediaSource],
+        dict[int, HostMediaArtworkSource],
+        dict[str, Track],
+    ]:
         if sources is None:
             sources = {
                 host_path_identity(str(item.path)): item
                 for item in request.host.sources
             }
+        artwork_sources: dict[int, HostMediaArtworkSource] = {
+            item.artwork_id: item for item in request.host.artwork_sources
+        }
         host_tracks = request.host.snapshot.tracks
         host_tag_hashes = {
             host_path_identity(track.metadata.location): track_tag_sha256(track)
@@ -1036,6 +1083,8 @@ class SyncExecutor:
         cleanup_lock = Lock()
         activity_lock = Lock()
         sources_lock = Lock()
+        artwork_lock = Lock()
+        tracks_lock = Lock()
         activity_updated = Event()
         active: dict[SyncPlanItem, MediaPreparationProgress] = {}
         activity_changed = False
@@ -1089,17 +1138,19 @@ class SyncExecutor:
                 source_key = host_path_identity(item.host_path or "")
                 with sources_lock:
                     source_obj = sources[source_key]
+                with tracks_lock:
+                    track_obj = tracks[source_key]
                 if request.jellyfin is not None and request.jellyfin.is_authenticated:
                     cache_file = Path(source_obj.path)
+                    client = JellyfinClient(
+                        request.jellyfin.server_url,
+                        token=request.jellyfin.access_token,
+                    )
+                    jelly_id = cache_file.stem
                     if not cache_file.exists():
-                        client = JellyfinClient(
-                            request.jellyfin.server_url,
-                            token=request.jellyfin.access_token,
-                        )
-                        jelly_id = cache_file.stem
                         media_item = JellyfinMediaItem(
                             item=JellyfinItem(item_id=jelly_id, name=item.name),
-                            track=tracks[source_key],
+                            track=track_obj,
                             source=source_obj,
                             cache_path=cache_file,
                         )
@@ -1115,6 +1166,33 @@ class SyncExecutor:
                     )
                     with sources_lock:
                         sources[source_key] = source_obj
+
+                    if track_obj.artwork_id:
+                        art_path = download_jellyfin_artwork(
+                            client, jelly_id, cache_file.parent
+                        )
+                        if (
+                            art_path is not None
+                            and art_path.is_file()
+                            and art_path.stat().st_size > 0
+                        ):
+                            art_stat = art_path.stat()
+                            art_bytes = art_path.read_bytes()
+                            art_sha256 = hashlib.sha256(art_bytes).hexdigest()
+                            art_source = HostMediaArtworkSource(
+                                artwork_id=track_obj.artwork_id,
+                                kind=HostArtworkKind.FOLDER,
+                                path=HostPath(art_path),
+                                size_bytes=art_stat.st_size,
+                                modified_ns=art_stat.st_mtime_ns,
+                                content_sha256=art_sha256,
+                            )
+                            with artwork_lock:
+                                artwork_sources[track_obj.artwork_id] = art_source
+                        else:
+                            track_obj = replace(track_obj, artwork_id=0)
+                            with tracks_lock:
+                                tracks[source_key] = track_obj
 
                 result = self._prepare_one(
                     request,
@@ -1255,7 +1333,7 @@ class SyncExecutor:
         order = {item: index for index, item in enumerate(request.plan.items)}
         prepared.sort(key=lambda result: order[result.item])
         if not prepared:
-            return prepared, issues, sources
+            return prepared, issues, sources, artwork_sources, tracks
         allocated: list[_PreparedTrack] = []
         # Reserve destinations serially: CPU workers must not compete for USB
         # metadata reads. Even replaced/removed paths stay reserved until commit.
@@ -1299,7 +1377,7 @@ class SyncExecutor:
                             ),
                         )
                     )
-        return allocated, issues, sources
+        return allocated, issues, sources, artwork_sources, tracks
 
     def _prepare_metadata_updates(
         self,
