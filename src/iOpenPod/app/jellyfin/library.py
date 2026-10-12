@@ -88,11 +88,19 @@ def translate_jellyfin_item(
     )
 
     kind = HostMediaFileKind.AUDIO if item.is_audio else HostMediaFileKind.VIDEO
+    if cache_file.is_file():
+        stat = cache_file.stat()
+        size_bytes = stat.st_size
+        modified_ns = stat.st_mtime_ns
+    else:
+        size_bytes = item.size_bytes or 1
+        modified_ns = 0
+
     source = HostMediaSource(
         path=HostPath(cache_file),
         kind=kind,
-        size_bytes=item.size_bytes or 1,
-        modified_ns=0,
+        size_bytes=size_bytes,
+        modified_ns=modified_ns,
     )
 
     return JellyfinMediaItem(

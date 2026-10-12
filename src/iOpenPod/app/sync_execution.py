@@ -384,6 +384,10 @@ class SyncExecutor:
                 )
             with ExitStack() as resources:
                 prepared: list[_PreparedTrack] = []
+                sources = {
+                    host_path_identity(str(source.path)): source
+                    for source in request.host.sources
+                }
                 metadata_updates = self._prepare_metadata_updates(request, checkpoint)
                 podcast_tracks: list[_PreparedPodcast] = []
                 if track_jobs:
@@ -409,8 +413,13 @@ class SyncExecutor:
                             )
                         )
                     else:
-                        prepared, failures = self._prepare_tracks(
-                            request, tools, resources, progress, checkpoint
+                        prepared, failures, sources = self._prepare_tracks(
+                            request,
+                            tools,
+                            resources,
+                            progress,
+                            checkpoint,
+                            sources=sources,
                         )
                         issues.extend(failures)
                         if podcast_plan is not None:
@@ -456,10 +465,13 @@ class SyncExecutor:
                 stable: list[_PreparedTrack] = []
                 stable_photos: list[_PreparedPhoto] = []
                 stable_metadata: list[_PreparedMetadataUpdate] = []
-                sources = {
-                    host_path_identity(str(source.path)): source
-                    for source in request.host.sources
-                }
+                request = replace(
+                    request,
+                    host=replace(
+                        request.host,
+                        sources=tuple(sources.values()),
+                    ),
+                )
                 candidates: tuple[
                     _PreparedTrack | _PreparedPhoto | _PreparedMetadataUpdate, ...
                 ] = (
@@ -996,10 +1008,13 @@ class SyncExecutor:
         resources: ExitStack,
         progress: Callable[[WriteProgress], None],
         checkpoint: Callable[[], None],
-    ) -> tuple[list[_PreparedTrack], list[WriteIssue]]:
-        sources = {
-            host_path_identity(str(item.path)): item for item in request.host.sources
-        }
+        sources: dict[str, HostMediaSource] | None = None,
+    ) -> tuple[list[_PreparedTrack], list[WriteIssue], dict[str, HostMediaSource]]:
+        if sources is None:
+            sources = {
+                host_path_identity(str(item.path)): item
+                for item in request.host.sources
+            }
         host_tracks = request.host.snapshot.tracks
         host_tag_hashes = {
             host_path_identity(track.metadata.location): track_tag_sha256(track)
@@ -1020,6 +1035,7 @@ class SyncExecutor:
         issues: list[WriteIssue] = []
         cleanup_lock = Lock()
         activity_lock = Lock()
+        sources_lock = Lock()
         activity_updated = Event()
         active: dict[SyncPlanItem, MediaPreparationProgress] = {}
         activity_changed = False
@@ -1071,25 +1087,25 @@ class SyncExecutor:
             )
             try:
                 source_key = host_path_identity(item.host_path or "")
-                source_obj = sources[source_key]
-                if (
-                    request.jellyfin is not None
-                    and request.jellyfin.is_authenticated
-                    and not Path(source_obj.path).exists()
-                ):
-                    client = JellyfinClient(
-                        request.jellyfin.server_url,
-                        token=request.jellyfin.access_token,
-                    )
+                with sources_lock:
+                    source_obj = sources[source_key]
+                if request.jellyfin is not None and request.jellyfin.is_authenticated:
                     cache_file = Path(source_obj.path)
-                    jelly_id = cache_file.stem
-                    media_item = JellyfinMediaItem(
-                        item=JellyfinItem(item_id=jelly_id, name=item.name),
-                        track=tracks[source_key],
-                        source=source_obj,
-                        cache_path=cache_file,
-                    )
-                    download_jellyfin_track(client, media_item, checkpoint=checkpoint)
+                    if not cache_file.exists():
+                        client = JellyfinClient(
+                            request.jellyfin.server_url,
+                            token=request.jellyfin.access_token,
+                        )
+                        jelly_id = cache_file.stem
+                        media_item = JellyfinMediaItem(
+                            item=JellyfinItem(item_id=jelly_id, name=item.name),
+                            track=tracks[source_key],
+                            source=source_obj,
+                            cache_path=cache_file,
+                        )
+                        download_jellyfin_track(
+                            client, media_item, checkpoint=checkpoint
+                        )
                     stat = cache_file.stat()
                     source_obj = HostMediaSource(
                         path=source_obj.path,
@@ -1097,12 +1113,13 @@ class SyncExecutor:
                         size_bytes=stat.st_size,
                         modified_ns=stat.st_mtime_ns,
                     )
-                    sources[source_key] = source_obj
+                    with sources_lock:
+                        sources[source_key] = source_obj
 
                 result = self._prepare_one(
                     request,
                     item,
-                    sources[source_key],
+                    source_obj,
                     tracks[source_key],
                     tools,
                     checkpoint,
@@ -1238,7 +1255,7 @@ class SyncExecutor:
         order = {item: index for index, item in enumerate(request.plan.items)}
         prepared.sort(key=lambda result: order[result.item])
         if not prepared:
-            return prepared, issues
+            return prepared, issues, sources
         allocated: list[_PreparedTrack] = []
         # Reserve destinations serially: CPU workers must not compete for USB
         # metadata reads. Even replaced/removed paths stay reserved until commit.
@@ -1282,7 +1299,7 @@ class SyncExecutor:
                             ),
                         )
                     )
-        return allocated, issues
+        return allocated, issues, sources
 
     def _prepare_metadata_updates(
         self,

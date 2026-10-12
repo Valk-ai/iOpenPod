@@ -76,6 +76,25 @@ def test_translate_jellyfin_item(tmp_path: Path) -> None:
     assert media_item.cache_path == tmp_path / "track-42.flac"
 
 
+def test_translate_jellyfin_item_uses_existing_cache_file_stat(tmp_path: Path) -> None:
+    cache_file = tmp_path / "track-cached.flac"
+    cache_file.write_bytes(b"FLACDATA12345")
+    stat = cache_file.stat()
+
+    item = JellyfinItem(
+        item_id="track-cached",
+        name="Cached Song",
+        album="Album",
+        artist="Artist",
+        container="flac",
+        size_bytes=999999,
+    )
+
+    media_item = translate_jellyfin_item(item, tmp_path)
+    assert media_item.source.size_bytes == stat.st_size
+    assert media_item.source.modified_ns == stat.st_mtime_ns
+
+
 def _make_dummy_local_library(tmp_path: Path) -> HostMediaLibrary:
     track1 = Track(
         track_id=1,
