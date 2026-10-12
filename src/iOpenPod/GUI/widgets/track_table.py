@@ -314,6 +314,7 @@ class TrackTable(QTableView):
         if self._sync_selection_enabled:
             header = self.horizontalHeader()
             header.moveSection(header.visualIndex(TrackColumn.SYNC_SELECTION), 0)
+            self.setColumnHidden(TrackColumn.SOURCE, False)
 
     def _theme_changed(self, _theme: str) -> None:
         self.viewport().update()
@@ -385,6 +386,8 @@ class TrackTable(QTableView):
         add_menu = menu.addMenu(self.tr("Add Column"))
         any_available = False
         for group_label, columns in track_column_groups():
+            if not self._sync_selection_enabled and group_label == "Sync":
+                continue
             hidden_columns = tuple(
                 column
                 for column in columns

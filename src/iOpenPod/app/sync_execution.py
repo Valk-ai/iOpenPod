@@ -1168,9 +1168,36 @@ class SyncExecutor:
                         sources[source_key] = source_obj
 
                     if track_obj.artwork_id:
-                        art_path = download_jellyfin_artwork(
-                            client, jelly_id, cache_file.parent
-                        )
+                        art_filename = f"art_{track_obj.artwork_id}.jpg"
+                        art_candidate = cache_file.parent / art_filename
+                        art_path: Path | None = None
+                        if art_candidate.is_file() and art_candidate.stat().st_size > 0:
+                            art_path = art_candidate
+                        else:
+                            art_path = download_jellyfin_artwork(
+                                client,
+                                jelly_id,
+                                cache_file.parent,
+                                filename=art_filename,
+                            )
+                            if art_path is None and request.jellyfin.user_id:
+                                try:
+                                    jelly_item = client.get_item(
+                                        request.jellyfin.user_id, jelly_id
+                                    )
+                                    target_guid = (
+                                        jelly_item.album_id or jelly_item.item_id
+                                    )
+                                    if target_guid:
+                                        art_path = download_jellyfin_artwork(
+                                            client,
+                                            target_guid,
+                                            cache_file.parent,
+                                            filename=art_filename,
+                                        )
+                                except Exception:
+                                    pass
+
                         if (
                             art_path is not None
                             and art_path.is_file()

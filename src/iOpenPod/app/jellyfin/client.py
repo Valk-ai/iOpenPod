@@ -362,10 +362,15 @@ class JellyfinClient:
                 ):
                     bitrate_bps = first_source["Bitrate"]
 
+        album_id = str(item.get("AlbumId", ""))
+        album_primary_image_tag = str(item.get("AlbumPrimaryImageTag", ""))
+
         image_tags = item.get("ImageTags")
         image_tag = ""
         if isinstance(image_tags, dict) and "Primary" in image_tags:
             image_tag = str(image_tags["Primary"])
+        elif album_primary_image_tag:
+            image_tag = album_primary_image_tag
 
         return JellyfinItem(
             item_id=item_id,
@@ -383,6 +388,8 @@ class JellyfinClient:
             size_bytes=size_bytes,
             bitrate_bps=bitrate_bps,
             image_tag=image_tag,
+            album_id=album_id,
+            album_primary_image_tag=album_primary_image_tag,
             path=path,
             overview=overview,
         )

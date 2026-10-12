@@ -98,6 +98,8 @@ class JellyfinItem:
     size_bytes: int = 0
     bitrate_bps: int = 0
     image_tag: str = ""
+    album_id: str = ""
+    album_primary_image_tag: str = ""
     path: str = ""
     overview: str = ""
 

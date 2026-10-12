@@ -18,8 +18,10 @@ from iOpenPod.app.host_media_library import (
     HostMediaSource,
 )
 from iOpenPod.app.jellyfin.library import (
+    JellyfinArtworkLoader,
     download_jellyfin_artwork,
     download_jellyfin_track,
+    is_jellyfin_source,
     merge_with_jellyfin,
     stable_jellyfin_id,
     translate_jellyfin_item,
@@ -28,6 +30,7 @@ from iOpenPod.app.jellyfin.models import (
     JellyfinItem,
     OverlapPolicy,
 )
+from iOpenPod.app.models.artwork import ArtworkRequest
 from iPodDB.library import (
     LibrarySnapshot,
     MediaKind,
@@ -325,3 +328,78 @@ def test_download_jellyfin_artwork_corrupt(tmp_path: Path) -> None:
 
     assert out_path is None
     assert not (tmp_path / "item-corrupt.jpg").exists()
+
+
+def test_is_jellyfin_source() -> None:
+    from iOpenPod.app.jellyfin.library import DEFAULT_CACHE_DIR
+
+    jf_path = DEFAULT_CACHE_DIR / "track123.flac"
+    assert is_jellyfin_source(jf_path) is True
+    assert is_jellyfin_source(str(jf_path)) is True
+    assert is_jellyfin_source("/home/user/Music/song.mp3") is False
+    assert is_jellyfin_source(None) is False
+
+
+def test_translate_jellyfin_item_album_artwork(tmp_path: Path) -> None:
+    item1 = JellyfinItem(
+        item_id="track-1",
+        name="Track One",
+        album="Great Album",
+        album_id="album-999",
+        album_primary_image_tag="tag-123",
+    )
+    item2 = JellyfinItem(
+        item_id="track-2",
+        name="Track Two",
+        album="Great Album",
+        album_id="album-999",
+        album_primary_image_tag="tag-123",
+    )
+    m1 = translate_jellyfin_item(item1, tmp_path)
+    m2 = translate_jellyfin_item(item2, tmp_path)
+    assert m1.track.artwork_id > 0
+    assert m1.track.artwork_id == m2.track.artwork_id
+
+
+def test_jellyfin_artwork_loader(tmp_path: Path) -> None:
+    img = Image.new("RGB", (200, 200), color=(100, 150, 200))
+    buf = BytesIO()
+    img.save(buf, format="JPEG")
+    jpeg_bytes = buf.getvalue()
+
+    fake_client = MagicMock()
+    fake_client.get_image_url.return_value = "http://jelly.lan/img"
+    fake_client._headers.return_value = {}
+
+    item = JellyfinItem(
+        item_id="track-1",
+        name="Track",
+        album_id="album-abc",
+        album_primary_image_tag="img-tag",
+    )
+
+    loader = JellyfinArtworkLoader(fake_client, cache_dir=tmp_path)
+    loader.register_item(item)
+
+    art_id = stable_jellyfin_id("album-abc")
+    fake_resp = MagicMock()
+    fake_resp.__enter__.return_value = fake_resp
+    fake_resp.read.return_value = jpeg_bytes
+
+    with patch("iOpenPod.app.jellyfin.library.urlopen", return_value=fake_resp):
+        artwork = loader.load_artwork(ArtworkRequest(artwork_id=art_id, target_px=100))
+
+    assert artwork is not None
+    assert artwork.artwork_id == art_id
+    assert artwork.width <= 100
+    assert artwork.height <= 100
+    assert (tmp_path / f"art_{art_id}.jpg").is_file()
+
+    # Second load hits the cache file directly without calling urlopen
+    with patch("iOpenPod.app.jellyfin.library.urlopen") as mock_url:
+        cached_art = loader.load_artwork(
+            ArtworkRequest(artwork_id=art_id, target_px=50)
+        )
+    mock_url.assert_not_called()
+    assert cached_art is not None
+    assert cached_art.artwork_id == art_id

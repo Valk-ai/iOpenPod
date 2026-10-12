@@ -8,6 +8,7 @@ from typing import cast
 
 from PySide6.QtCore import QT_TRANSLATE_NOOP, QCoreApplication
 
+from iOpenPod.app.jellyfin.library import is_jellyfin_source
 from iPodDB.library import ContentAdvisory, MediaKind, MediaType, Track
 
 type TrackSortValue = str | int | float | None
@@ -104,10 +105,13 @@ _COLUMN_TRANSLATION_SOURCES = frozenset(
         QT_TRANSLATE_NOOP("TrackTableModel", "Artwork"),
         QT_TRANSLATE_NOOP("TrackTableModel", "Playlist Position"),
         QT_TRANSLATE_NOOP("TrackTableModel", "Sync"),
+        QT_TRANSLATE_NOOP("TrackTableModel", "Source"),
     }
 )
 _YES_SOURCE = _marked(QT_TRANSLATE_NOOP("TrackTableModel", "Yes"))
 _NO_SOURCE = _marked(QT_TRANSLATE_NOOP("TrackTableModel", "No"))
+_JELLYFIN_SOURCE = _marked(QT_TRANSLATE_NOOP("TrackTableModel", "Jellyfin"))
+_LOCAL_SOURCE = _marked(QT_TRANSLATE_NOOP("TrackTableModel", "Local"))
 _UNTITLED_TRACK_SOURCE = _marked(QT_TRANSLATE_NOOP("LibraryLabels", "Untitled Track"))
 _UNTITLED_CHAPTER_SOURCE = _marked(
     QT_TRANSLATE_NOOP("TrackTableModel", "Untitled Chapter")
@@ -228,6 +232,7 @@ class TrackColumn(IntEnum):
     ARTWORK = auto()
     PLAYLIST_POSITION = auto()
     SYNC_SELECTION = auto()
+    SOURCE = auto()
 
 
 _COLUMN_GROUPS = (
@@ -383,7 +388,7 @@ _COLUMN_GROUPS = (
     ),
     (
         _marked(QT_TRANSLATE_NOOP("TrackTable", "Sync")),
-        (TrackColumn.SYNC_SELECTION,),
+        (TrackColumn.SYNC_SELECTION, TrackColumn.SOURCE),
     ),
 )
 _DEFAULT_VISIBLE_COLUMNS = frozenset(
@@ -414,6 +419,7 @@ _DEFAULT_COLUMN_WIDTHS = {
     TrackColumn.ARTWORK: 52,
     TrackColumn.PLAYLIST_POSITION: 88,
     TrackColumn.SYNC_SELECTION: 64,
+    TrackColumn.SOURCE: 96,
 }
 _LONG_TEXT_COLUMNS = frozenset(
     {
@@ -780,6 +786,15 @@ def _build_column_definitions() -> tuple[TrackColumnDefinition, ...]:
         _column("Playlist Position", lambda _track: None, right_aligned=True),
         # Sync Selection belongs to the current workflow, not Track metadata.
         _column("Sync", lambda _track: None, lambda _value: ""),
+        _column(
+            "Source",
+            lambda track: (
+                _translate(_JELLYFIN_SOURCE)
+                if is_jellyfin_source(track.metadata.location)
+                else _translate(_LOCAL_SOURCE)
+            ),
+            lambda value: value,
+        ),
     )
 
 

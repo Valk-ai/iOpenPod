@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 from iOpenPod.app.host_media_library import (
     HostMediaFileKind,
@@ -25,9 +25,10 @@ from iOpenPod.app.jellyfin.models import (
     JellyfinItem,
     OverlapPolicy,
 )
+from iOpenPod.app.models.artwork import ArtworkImage, ArtworkRequest
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterable
 
     from iOpenPod.app.jellyfin.client import JellyfinClient
 from iPodDB.library import (
@@ -41,6 +42,20 @@ from storage import HostPath
 logger = logging.getLogger(__name__)
 
 DEFAULT_CACHE_DIR = Path.home() / ".cache" / "iopenpod" / "jellyfin"
+
+
+def is_jellyfin_source(location: str | Path | object | None) -> bool:
+    """Return True if the given media location or path is in the Jellyfin cache."""
+    if not location:
+        return False
+    if hasattr(location, "path"):
+        location = location.path
+    try:
+        loc_str = os.fspath(location)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return False
+    cache_str = os.fspath(DEFAULT_CACHE_DIR)
+    return loc_str.startswith(cache_str) or ".cache/iopenpod/jellyfin" in loc_str
 
 
 def stable_jellyfin_id(item_id: str) -> int:
@@ -72,6 +87,10 @@ def translate_jellyfin_item(
 
     media_types = (MediaType.AUDIO,) if item.is_audio else (MediaType.VIDEO,)
 
+    art_guid = item.album_id or item.item_id
+    has_image = bool(item.image_tag or item.album_primary_image_tag)
+    artwork_id = stable_jellyfin_id(art_guid) if has_image else 0
+
     track = Track(
         track_id=track_id,
         title=item.name or "Unknown Title",
@@ -84,7 +103,7 @@ def translate_jellyfin_item(
         length_ms=item.duration_ms,
         bitrate_kbps=item.bitrate_bps // 1000 if item.bitrate_bps else 0,
         media_types=media_types,
-        artwork_id=track_id if item.image_tag else 0,
+        artwork_id=artwork_id,
         metadata=TrackMetadata(
             disc_number=item.disc_number,
             location=os.fspath(cache_file),
@@ -282,10 +301,13 @@ def download_jellyfin_artwork(
     client: JellyfinClient,
     item_id: str,
     cache_dir: Path,
+    *,
+    filename: str | None = None,
 ) -> Path | None:
     """Download an item's primary cover image to cache, returning its path if available."""
     cache_dir.mkdir(parents=True, exist_ok=True)
-    dest = cache_dir / f"{item_id}.jpg"
+    target_name = filename if filename else f"{item_id}.jpg"
+    dest = cache_dir / target_name
     if dest.is_file() and dest.stat().st_size > 0:
         return dest
 
@@ -321,12 +343,77 @@ def download_jellyfin_artwork(
                     )
                     return None
 
-                part = dest.with_suffix(
-                    f".{os.getpid()}_{threading.get_ident()}.jpg.part"
-                )
+                part = dest.with_suffix(f".{os.getpid()}_{threading.get_ident()}.part")
                 part.write_bytes(data)
                 part.replace(dest)
                 return dest
     except Exception as exc:
         logger.debug("No artwork available for Jellyfin item %s: %s", item_id, exc)
     return None
+
+
+class JellyfinArtworkLoader:
+    """Lazily decode artwork from Jellyfin items outside the GUI thread."""
+
+    def __init__(self, client: JellyfinClient, cache_dir: Path | None = None) -> None:
+        self._client = client
+        self._cache_dir = cache_dir or DEFAULT_CACHE_DIR
+        self._targets: dict[int, str] = {}
+        self._lock = threading.Lock()
+
+    def register_item(self, item: JellyfinItem) -> None:
+        """Associate an item's artwork ID with its image target GUID."""
+        art_guid = item.album_id or item.item_id
+        if item.image_tag or item.album_primary_image_tag:
+            art_id = stable_jellyfin_id(art_guid)
+            with self._lock:
+                self._targets[art_id] = art_guid
+
+    def register_items(self, items: Iterable[JellyfinItem]) -> None:
+        """Register multiple Jellyfin items for lazy artwork resolution."""
+        for item in items:
+            self.register_item(item)
+
+    def load_artwork(self, request: ArtworkRequest) -> ArtworkImage | None:
+        """Fetch, cache, and decode one artwork image outside the GUI thread."""
+        dest = self._cache_dir / f"art_{request.artwork_id}.jpg"
+        if not (dest.is_file() and dest.stat().st_size > 0):
+            with self._lock:
+                target_guid = self._targets.get(request.artwork_id)
+            if not target_guid:
+                return None
+            dest_downloaded = download_jellyfin_artwork(
+                self._client,
+                target_guid,
+                self._cache_dir,
+                filename=f"art_{request.artwork_id}.jpg",
+            )
+            if dest_downloaded is None:
+                return None
+            dest = dest_downloaded
+
+        try:
+            with Image.open(dest) as opened:
+                oriented = ImageOps.exif_transpose(opened)
+                oriented.thumbnail(
+                    (request.target_px, request.target_px),
+                    Image.Resampling.LANCZOS,
+                )
+                pixels = oriented.convert("RGB")
+                width, height = pixels.size
+                rgb888 = pixels.tobytes()
+            return ArtworkImage(
+                cache_key=f"jellyfin/{request.artwork_id}/{request.target_px}/{width}x{height}",
+                artwork_id=request.artwork_id,
+                format_id=1,
+                width=width,
+                height=height,
+                rgb888=rgb888,
+            )
+        except Exception as exc:
+            logger.debug(
+                "Failed to decode Jellyfin artwork for request %s: %s",
+                request.artwork_id,
+                exc,
+            )
+            return None

@@ -152,4 +152,8 @@ class AlbumCardDelegate(QStyledItemDelegate):
         if summary.year > 0:
             parts.append(str(summary.year))
         parts.append(track_count_text(summary.track_count))
+        if summary.source_label:
+            parts.append(
+                QCoreApplication.translate("LibraryLabels", summary.source_label)
+            )
         return " · ".join(parts)

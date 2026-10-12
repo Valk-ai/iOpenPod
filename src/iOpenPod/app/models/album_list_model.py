@@ -16,6 +16,7 @@ from PySide6.QtCore import (
     Qt,
 )
 
+from iOpenPod.app.jellyfin.library import is_jellyfin_source
 from iOpenPod.app.models.artwork_seed import stable_artwork_seed
 from iOpenPod.app.models.keyed_projection import reconcile_keyed_rows
 from iPodDB.library import MediaKind
@@ -46,6 +47,7 @@ class AlbumSummary:
     artist_key: str
     genre_keys: frozenset[str]
     track_ids: tuple[int, ...] = ()
+    source_label: str = ""
 
 
 @dataclass(slots=True)
@@ -61,6 +63,8 @@ class _AlbumAccumulator:
     artist_key: str
     genre_keys: set[str] = field(default_factory=set[str])
     track_ids: list[int] = field(default_factory=list[int])
+    has_local: bool = False
+    has_jellyfin: bool = False
 
 
 class AlbumRole(IntEnum):
@@ -207,6 +211,7 @@ class AlbumListModel(QAbstractListModel):
         for track in self._tracks.tracks:
             if track.media_kind is not MediaKind.MUSIC:
                 continue
+            is_jf = is_jellyfin_source(track.metadata.location)
             album = accumulators.get(track.album_key)
             if album is None:
                 accumulators[track.album_key] = _AlbumAccumulator(
@@ -221,10 +226,16 @@ class AlbumListModel(QAbstractListModel):
                     artist_key=track.artist_key,
                     genre_keys={track.genre_key} if track.genre_key else set(),
                     track_ids=[track.track_id],
+                    has_local=not is_jf,
+                    has_jellyfin=is_jf,
                 )
                 continue
             album.track_count += 1
             album.duration_ms += max(0, track.length_ms)
+            if is_jf:
+                album.has_jellyfin = True
+            else:
+                album.has_local = True
             if album.year <= 0 and track.year > 0:
                 album.year = track.year
             if album.artwork_id <= 0 and track.artwork_id > 0:
@@ -246,6 +257,13 @@ class AlbumListModel(QAbstractListModel):
                 artist_key=album.artist_key,
                 genre_keys=frozenset(album.genre_keys),
                 track_ids=tuple(album.track_ids),
+                source_label=(
+                    "Mixed"
+                    if (album.has_local and album.has_jellyfin)
+                    else "Jellyfin"
+                    if album.has_jellyfin
+                    else "Local"
+                ),
             )
             for album in accumulators.values()
         )

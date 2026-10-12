@@ -365,6 +365,14 @@ class HostMediaArtworkLoader:
     def __init__(self) -> None:
         self._sources: dict[int, HostMediaArtworkSource] = {}
         self._external_files: dict[str, LocalHostFile] = {}
+        self._fallback_loader: (
+            Callable[[ArtworkRequest], ArtworkImage | None] | None
+        ) = None
+
+    def set_fallback_loader(
+        self, loader: Callable[[ArtworkRequest], ArtworkImage | None] | None
+    ) -> None:
+        self._fallback_loader = loader
 
     def replace_library(self, library: HostMediaLibrary | None) -> None:
         """Replace the complete source generation used by later lazy reads."""
@@ -388,6 +396,8 @@ class HostMediaArtworkLoader:
 
         source = self._sources.get(request.artwork_id)
         if source is None:
+            if self._fallback_loader is not None:
+                return self._fallback_loader(request)
             return None
         external = self._external_files.get(_path_identity(source.path.path))
         try:

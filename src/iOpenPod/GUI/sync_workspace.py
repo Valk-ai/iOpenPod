@@ -47,6 +47,7 @@ from iOpenPod.GUI.widgets.themed_buttons import (
 if TYPE_CHECKING:
     from iOpenPod.app.core.settings.service import SettingsService
     from iOpenPod.app.host_media_library import HostMediaLibrary
+    from iOpenPod.app.jellyfin.library import JellyfinArtworkLoader
     from iOpenPod.app.library_sync_helper import IPodMediaLibrary
     from iOpenPod.app.models.device import ActiveIPod
     from iOpenPod.app.sync_execution import PlaylistSyncChange
@@ -276,6 +277,7 @@ class SyncWorkspace(QWidget):
         self._playlist_preview: tuple[PlaylistSyncChange, ...] = ()
         self._storage_bar = SyncStorageBar(theme_manager, self)
         self.browser: HostLibraryBrowser | None = None
+        self._jellyfin_artwork_loader: JellyfinArtworkLoader | None = None
 
         self._title = QLabel(self)
         self._title.setObjectName("syncWorkspaceTitle")
@@ -669,6 +671,11 @@ class SyncWorkspace(QWidget):
         if isinstance(playlist_id, int):
             self._library_navigation.playlist_tree.select_playlist(playlist_id)
 
+    def set_jellyfin_artwork_loader(self, loader: JellyfinArtworkLoader | None) -> None:
+        self._jellyfin_artwork_loader = loader
+        if self.browser is not None:
+            self.browser.set_jellyfin_artwork_loader(loader)
+
     def _ensure_browser(self) -> HostLibraryBrowser:
         browser = self.browser
         if browser is not None:
@@ -681,6 +688,8 @@ class SyncWorkspace(QWidget):
             self._library_stack,
             self.selection,
         )
+        if self._jellyfin_artwork_loader is not None:
+            browser.set_jellyfin_artwork_loader(self._jellyfin_artwork_loader)
         for page in browser.pages:
             self._library_stack.addWidget(page)
         browser.playlist_page.playlistSelected.connect(self._playlist_page_selected)

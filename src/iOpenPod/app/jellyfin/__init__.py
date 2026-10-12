@@ -1,6 +1,10 @@
 """Jellyfin media server integration for iOpenPod."""
 
 from .client import JellyfinClient
+from .library import (
+    JellyfinArtworkLoader,
+    is_jellyfin_source,
+)
 from .models import (
     JellyfinAuthError,
     JellyfinAuthResult,
@@ -39,6 +43,7 @@ __all__ = [
     "JELLYFIN_SYNC_VIDEOS",
     "JELLYFIN_USER_ID",
     "JELLYFIN_USER_NAME",
+    "JellyfinArtworkLoader",
     "JellyfinAuthError",
     "JellyfinAuthResult",
     "JellyfinClient",
@@ -52,6 +57,7 @@ __all__ = [
     "OverlapPolicy",
     "QuickConnectInitiateResult",
     "clear_jellyfin_config",
+    "is_jellyfin_source",
     "load_jellyfin_config",
     "save_jellyfin_config",
 ]

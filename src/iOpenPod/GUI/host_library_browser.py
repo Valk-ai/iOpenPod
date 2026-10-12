@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from iOpenPod.app.jellyfin.library import JellyfinArtworkLoader
+
 from PySide6.QtWidgets import QAbstractItemView
 
 from iOpenPod.app.artwork_controller import ArtworkController
@@ -277,6 +280,12 @@ class HostLibraryBrowser:
                     *page.findChildren(PhotoGridView),
                 ):
                     self._sync_actions.install(view)
+
+    def set_jellyfin_artwork_loader(self, loader: JellyfinArtworkLoader | None) -> None:
+        """Attach or clear a fallback loader for remote Jellyfin artwork."""
+        self._artwork_loader.set_fallback_loader(
+            loader.load_artwork if loader is not None else None
+        )
 
     def load(self, library: HostMediaLibrary) -> None:
         """Publish a complete scan to every shared Host Library view model."""

@@ -48,7 +48,11 @@ from iOpenPod.app.host_media_library import (
     PlaylistExternalReference,
 )
 from iOpenPod.app.jellyfin.client import JellyfinClient
-from iOpenPod.app.jellyfin.library import fetch_jellyfin_library, merge_with_jellyfin
+from iOpenPod.app.jellyfin.library import (
+    JellyfinArtworkLoader,
+    fetch_jellyfin_library,
+    merge_with_jellyfin,
+)
 from iOpenPod.app.jellyfin.settings import load_jellyfin_config
 from iOpenPod.app.library_export import (
     ExportProgress,
@@ -1733,6 +1737,9 @@ class MainWindow(QMainWindow):
                     jellyfin_config,
                     sync_videos=sync_videos,
                 )
+                artwork_loader = JellyfinArtworkLoader(client)
+                artwork_loader.register_items(item.item for item in remote_items)
+                self._sync_workspace.set_jellyfin_artwork_loader(artwork_loader)
                 value = merge_with_jellyfin(
                     value,
                     remote_items,
@@ -1740,6 +1747,8 @@ class MainWindow(QMainWindow):
                 )
             except Exception as exc:
                 logger.warning("Could not merge Jellyfin media: %s", exc)
+        else:
+            self._sync_workspace.set_jellyfin_artwork_loader(None)
 
         if self._context.device_controller.active_ipod is not None:
             self._pending_host_media_library = value
