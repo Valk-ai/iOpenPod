@@ -362,6 +362,16 @@ class SyncSelection(QObject):
             checked,
         )
 
+    def select_all_host(self) -> bool:
+        """Select every Host track and photo known to the scanned library."""
+        all_paths = set(self._track_paths.values()) | set(self._photo_paths.values())
+        return self._set_paths(all_paths, True)
+
+    def deselect_all_host(self) -> bool:
+        """Deselect every Host track and photo from Sync."""
+        all_paths = set(self._track_paths.values()) | set(self._photo_paths.values())
+        return self._set_paths(all_paths | self._selected_host_paths, False)
+
     def removal_check_state(self, item: SyncPlanItem) -> Qt.CheckState | None:
         key = _removal_key(item)
         if key is None:

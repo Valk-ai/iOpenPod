@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtCore import Qt
+from PySide6.QtTest import QSignalSpy
 
 from iOpenPod.app.host_media_library import (
     HostMediaCacheStats,
@@ -438,3 +439,36 @@ def test_foreign_preserved_path_is_rejected_without_changing_selection(
         )
     assert selection.selected_plan == before
     assert selection.duplicate_resolutions == ()
+
+
+def test_select_all_and_deselect_all_host_bulk_toggles(
+    tmp_path: Path,
+) -> None:
+    host, comparison = _comparison(tmp_path)
+    selection = _selection(host, comparison)
+    host_changed_spy = QSignalSpy(selection.hostSelectionChanged)
+    changed_spy = QSignalSpy(selection.changed)
+
+    # Initially select all
+    assert selection.select_all_host()
+    assert host_changed_spy.count() == 1
+    assert changed_spy.count() == 1
+    assert selection.selected_host_count == 2
+    assert selection.track_check_state(1) is Qt.CheckState.Checked
+    assert selection.track_check_state(2) is Qt.CheckState.Checked
+
+    # Calling select_all_host again is a no-op
+    assert not selection.select_all_host()
+    assert host_changed_spy.count() == 1
+
+    # Deselect all
+    assert selection.deselect_all_host()
+    assert host_changed_spy.count() == 2
+    assert changed_spy.count() == 2
+    assert selection.selected_host_count == 0
+    assert selection.track_check_state(1) is Qt.CheckState.Unchecked
+    assert selection.track_check_state(2) is Qt.CheckState.Unchecked
+
+    # Calling deselect_all_host again is a no-op
+    assert not selection.deselect_all_host()
+    assert host_changed_spy.count() == 2
